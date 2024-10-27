@@ -44,16 +44,18 @@ Decrypt a previously encrypted file.
 python main.py decrypt FILE_PATH
 ```
 #### or
-
 ```bash
 python main.py decrypt SHORTCUT
 ```
+
+
 #### Temporarily Read Encrypted File
 Read and display the content of an encrypted file without modifying it.
 
 ```bash
 python main.py view FILE_PATH
 ```
+
 
 #### Temporarily Opens Encrypted File & Inserts Text
 ```bash
