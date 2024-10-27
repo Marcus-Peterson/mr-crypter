@@ -17,7 +17,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 2. Install the required dependencies by running:
 
     ```bash
-    pip install typer cryptography
+    pip install -r requirements.txt
     ```
 
 3. Make sure to have `Python 3.7` or above installed.
@@ -30,13 +30,14 @@ When using Mr Crypter for the first time, you will be prompted to set a password
 ### Commands
 Below are the commands available with Mr Crypter:
 
+----------------------------------------------------------
 #### Encrypt a File
 Encrypt a specified file and log its details.
 
 ```bash
 python main.py encrypt FILE_PATH
 ```
-
+----------------------------------------------------------
 #### Decrypt a File
 Decrypt a previously encrypted file.
 
@@ -48,7 +49,7 @@ python main.py decrypt FILE_PATH
 python main.py decrypt SHORTCUT
 ```
 
-
+----------------------------------------------------------
 #### Temporarily Read Encrypted File
 Read and display the content of an encrypted file without modifying it.
 
@@ -56,12 +57,13 @@ Read and display the content of an encrypted file without modifying it.
 python main.py view FILE_PATH
 ```
 
-
+----------------------------------------------------------
 #### Temporarily Opens Encrypted File & Inserts Text
 ```bash
 python main.py insert FILE_PATH "New content to add"
 ```
 
+----------------------------------------------------------
 #### Change Password
 Change the current password after authenticating with the old password.
 
@@ -69,13 +71,15 @@ Change the current password after authenticating with the old password.
 python main.py change-password
 ```
 
+----------------------------------------------------------
 #### List Encrypted Files
 Display all files encrypted using Mr Crypter.
 
 ```bash
-python main.py list-encrypted-files
+python main.py list-files
 ```
 
+----------------------------------------------------------
 #### Clears The Log Of Encrypted Files & Shortcut
 
 ```bash
