@@ -128,79 +128,68 @@ def resolve_path(shortcut_or_path: str) -> Path:
 @app.command()
 def encrypt(file_path: Path):
     """Encrypt a file with a progress bar and record it with a shortcut name."""
-    # Check if file exists
     if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: Specified file does not exist. Please provide a valid file path.", fg=typer.colors.RED)
+        typer.secho("Error: Specified file does not exist.", fg=typer.colors.RED)
         raise typer.Exit()
 
     key = authenticate()
     fernet = Fernet(key)
-
     shortcut = typer.prompt("Enter a shortcut name for this file")
     
-    # File size for progress tracking
     file_size = file_path.stat().st_size
-    chunk_size = 4096  # Encrypt and write in 4KB chunks
 
-    with open(file_path, "rb") as file, Progress(console=console) as progress:
+    with Progress(console=console) as progress:
         task = progress.add_task("Encrypting...", total=file_size)
         
-        # Reading and encrypting in chunks
-        encrypted_data = bytearray()
-        while chunk := file.read(chunk_size):
-            encrypted_data.extend(fernet.encrypt(chunk))
-            progress.update(task, advance=chunk_size)
+        # Read the entire file as binary
+        with open(file_path, "rb") as file:
+            data = file.read()
+            progress.update(task, advance=file_size)
 
-    # Write encrypted data to the file
-    with open(file_path, "wb") as file:
-        file.write(encrypted_data)
+        # Encrypt the entire binary data at once
+        encrypted_data = fernet.encrypt(data)
+        
+        # Write the encrypted data
+        with open(file_path, "wb") as file:
+            file.write(encrypted_data)
 
     record_encryption(file_path, shortcut)
-    typer.secho(f"File '{file_path}' encrypted and recorded with shortcut '{shortcut}' successfully.", fg=typer.colors.GREEN)
+    typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
 
 @app.command()
 def decrypt(shortcut_or_path: str):
-    """Decrypt a file using its path or shortcut and remove it from the encrypted log."""
+    """Decrypt a file using its path or shortcut."""
     key = authenticate()
     file_path = resolve_path(shortcut_or_path)
     
-    # Verify that file exists before decryption
     if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: Specified file does not exist. Please provide a valid file path or shortcut.", fg=typer.colors.RED)
+        typer.secho("Error: File does not exist.", fg=typer.colors.RED)
         raise typer.Exit()
     
     fernet = Fernet(key)
-
-    # File size for progress tracking
     file_size = file_path.stat().st_size
 
-    # Read the encrypted data with progress feedback
     with Progress(console=console) as progress:
         task = progress.add_task("Decrypting...", total=file_size)
         
-        # Read the entire encrypted file
+        # Read the encrypted data
         with open(file_path, "rb") as file:
             encrypted_data = file.read()
-            progress.update(task, advance=file_size)  # Update progress to full since we read the whole file
+            progress.update(task, advance=file_size)
 
-    # Decrypt the data
-    try:
-        decrypted_data = fernet.decrypt(encrypted_data)
-    except Exception:
-        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-        raise typer.Exit()
+        try:
+            # Decrypt the entire binary data at once
+            decrypted_data = fernet.decrypt(encrypted_data)
+        except InvalidToken:
+            typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+            raise typer.Exit()
 
-    # Write the decrypted data back with progress feedback
-    with Progress(console=console) as progress:
-        task = progress.add_task("Writing decrypted file...", total=len(decrypted_data))
-        
+        # Write the decrypted data
         with open(file_path, "wb") as file:
             file.write(decrypted_data)
-            progress.update(task, advance=len(decrypted_data))  # Update progress to full after writing
 
-    # Remove from log
     remove_from_log(file_path)
-    typer.secho(f"File '{file_path}' decrypted and removed from log successfully.", fg=typer.colors.GREEN)
+    typer.secho(f"File decrypted successfully.", fg=typer.colors.GREEN)
 
 @app.command()
 def view(shortcut_or_path: str):
