@@ -11,7 +11,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 - **List Encrypted Files**: Display a list of all files encrypted by Mr Crypter.
 - **Search Encrypted Files**: Search through encrypted files by filename or shortcut.
 
-## Installation
+## Installation: PIP
 
 1. Clone the repository or copy the `mr_crypter.py` file to your project directory.
 2. Install the required dependencies by running:
@@ -127,7 +127,7 @@ Mr Crypter uses the following configuration files and directories to manage encr
 - **Config Hash**: `config.hash` - Stores the password hash.
 - **Encrypted Files Log**: `encrypted_files.csv` - Logs all encrypted files.
 
-## Installation
+## Installation: Unix & Windows
 
 ### For unix based systems
 Use the `install.sh` script if you want easy installation. And make it available from anywhere.
