@@ -139,6 +139,7 @@ Use the `install.py` script if you want easy installation. And make it available
 ```bash
 python install.py
 ```
+After installation, you can use `mr-crypter` [COMMAND] from anywhere.
 
 ## Security Notes
 - Your password is hashed and stored securely; however, remember that if you forget the password, encrypted files cannot be decrypted.
