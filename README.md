@@ -1,4 +1,3 @@
-
 # Mr Crypter
 
 Mr Crypter is a command-line tool built using Python's `Typer` framework to provide encryption and decryption functionalities. 
@@ -10,6 +9,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 - **Read Encrypted Files**: Temporarily decrypt and view file content without altering the original file.
 - **Change Password**: Update the encryption password securely.
 - **List Encrypted Files**: Display a list of all files encrypted by Mr Crypter.
+- **Search Encrypted Files**: Search through encrypted files by filename or shortcut.
 
 ## Installation
 
@@ -25,7 +25,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 ## Usage
 
 ### Initial Setup
-When using Mr Crypter for the first time, you will be prompted to set a password. This password will be used for encryption and decryption.
+When using Mr Crypter for the first time, you will need to set a password. This password will be used for encryption and decryption, use the `change-password` command to set the password.
 
 ### Commands
 Below are the commands available with Mr Crypter:
@@ -56,11 +56,19 @@ Read and display the content of an encrypted file without modifying it.
 ```bash
 python main.py view FILE_PATH
 ```
+#### or
+```bash
+python main.py view SHORTCUT
+```
 
 ----------------------------------------------------------
 #### Temporarily Opens Encrypted File & Inserts Text
 ```bash
 python main.py insert FILE_PATH "New content to add"
+```
+#### or
+```bash
+python main.py insert SHORTCUT "New content to add"
 ```
 
 ----------------------------------------------------------
@@ -86,6 +94,30 @@ python main.py list-files
 python main.py clear-log
 ```
 
+----------------------------------------------------------
+#### Search Encrypted Files
+Search through encrypted files by filename or shortcut.
+
+```bash
+python main.py search SEARCH_TERM
+```
+
+Options:
+- `--shortcuts/--no-shortcuts`: Include or exclude shortcuts in search (default: include)
+- `--case-sensitive`: Make search case-sensitive (default: case-insensitive)
+
+Examples:
+```bash
+# Basic search
+python main.py search document
+
+# Case-sensitive search
+python main.py search PDF --case-sensitive
+
+# Search only in filenames (exclude shortcuts)
+python main.py search report --no-shortcuts
+```
+
 ## Configuration Files
 
 Mr Crypter uses the following configuration files and directories to manage encryption:
@@ -94,6 +126,19 @@ Mr Crypter uses the following configuration files and directories to manage encr
 - **Salt File**: `salt.key` - Stores the salt used for hashing.
 - **Config Hash**: `config.hash` - Stores the password hash.
 - **Encrypted Files Log**: `encrypted_files.csv` - Logs all encrypted files.
+
+## Installation
+
+### For unix based systems
+Use the `install.sh` script if you want easy installation. And make it available from anywhere.
+```bash
+./install.sh
+```
+### For windows based systems
+Use the `install.py` script if you want easy installation. And make it available from anywhere.
+```bash
+python install.py
+```
 
 ## Security Notes
 - Your password is hashed and stored securely; however, remember that if you forget the password, encrypted files cannot be decrypted.

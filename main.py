@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 import typer
+from typing import Optional
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
@@ -9,6 +11,7 @@ import base64
 import hashlib
 import csv
 from rich.table import Table
+from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress
 import fitz  # PyMuPDF
@@ -17,6 +20,7 @@ from cryptography.fernet import InvalidToken
 from io import BytesIO
 import string
 import codecs
+import pandas as pd
 import base64
 app = typer.Typer()
 
@@ -214,6 +218,56 @@ def view(shortcut_or_path: str):
         typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
         raise typer.Exit()
 
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search term to filter files"),
+    search_shortcuts: bool = typer.Option(True, "--shortcuts/--no-shortcuts", help="Include shortcuts in search"),
+    case_sensitive: bool = typer.Option(False, "--case-sensitive", help="Make search case-sensitive")
+) -> None:
+    """Search through encrypted files by filename or shortcut."""
+    try:
+        # Read CSV with proper column names
+        files_df = pd.read_csv(TRACKING_FILE, names=['filename', 'filepath', 'shortcut'])
+        
+        # Prepare search query
+        if not case_sensitive:
+            query = query.lower()
+            files_df['filename'] = files_df['filename'].str.lower()
+            files_df['shortcut'] = files_df['shortcut'].str.lower()
+        
+        # Create mask for filename matches
+        mask = files_df['filename'].str.contains(query, na=False)
+        
+        # Add shortcut matches if enabled
+        if search_shortcuts:
+            mask |= files_df['shortcut'].str.contains(query, na=False)
+        
+        # Filter results
+        results = files_df[mask]
+        
+        if len(results) == 0:
+            rprint(f"[yellow]No files found matching '{query}'[/yellow]")
+            return
+        
+        # Display results in a table
+        table = Table(title=f"Search Results for '{query}'")
+        table.add_column("Filename", style="cyan")
+        table.add_column("Shortcut", style="green")
+        table.add_column("Encrypted Path", style="blue")
+        
+        for _, row in results.iterrows():
+            table.add_row(
+                row['filename'],
+                row['shortcut'],
+                row['filepath']
+            )
+        
+        rprint(table)
+        
+    except FileNotFoundError:
+        rprint("[red]No encrypted files found. Encrypt some files first.[/red]")
+    except Exception as e:
+        rprint(f"[red]Error searching files: {str(e)}[/red]")
 
 @app.command()
 def list_files():
