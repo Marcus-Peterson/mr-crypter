@@ -43,7 +43,11 @@ Decrypt a previously encrypted file.
 ```bash
 python main.py decrypt FILE_PATH
 ```
+#### or
 
+```bash
+python main.py decrypt SHORTCUT
+```
 #### Temporarily Read Encrypted File
 Read and display the content of an encrypted file without modifying it.
 
@@ -70,7 +74,7 @@ Display all files encrypted using Mr Crypter.
 python main.py list-encrypted-files
 ```
 
-#### Clears The Log Of Encrypted Files
+#### Clears The Log Of Encrypted Files & Shortcut
 
 ```bash
 python main.py clear-log
