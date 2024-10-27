@@ -165,17 +165,32 @@ def decrypt(shortcut_or_path: str):
     
     fernet = Fernet(key)
 
-    with open(file_path, "rb") as file:
-        encrypted_data = file.read()
+    # File size for progress tracking
+    file_size = file_path.stat().st_size
 
+    # Read the encrypted data with progress feedback
+    with Progress(console=console) as progress:
+        task = progress.add_task("Decrypting...", total=file_size)
+        
+        # Read the entire encrypted file
+        with open(file_path, "rb") as file:
+            encrypted_data = file.read()
+            progress.update(task, advance=file_size)  # Update progress to full since we read the whole file
+
+    # Decrypt the data
     try:
         decrypted_data = fernet.decrypt(encrypted_data)
     except Exception:
         typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
         raise typer.Exit()
 
-    with open(file_path, "wb") as file:
-        file.write(decrypted_data)
+    # Write the decrypted data back with progress feedback
+    with Progress(console=console) as progress:
+        task = progress.add_task("Writing decrypted file...", total=len(decrypted_data))
+        
+        with open(file_path, "wb") as file:
+            file.write(decrypted_data)
+            progress.update(task, advance=len(decrypted_data))  # Update progress to full after writing
 
     # Remove from log
     remove_from_log(file_path)
