@@ -11,7 +11,13 @@ import csv
 from rich.table import Table
 from rich.console import Console
 from rich.progress import Progress
-
+import fitz  # PyMuPDF
+import tempfile
+from cryptography.fernet import InvalidToken
+from io import BytesIO
+import string
+import codecs
+import base64
 app = typer.Typer()
 
 # Configuration constants
@@ -219,8 +225,9 @@ def view(shortcut_or_path: str):
         typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
         raise typer.Exit()
 
+
 @app.command()
-def list_encrypted_files():
+def list_files():
     """List all files encrypted by this program with pretty formatting."""
     if not TRACKING_FILE.exists():
         typer.secho("No encrypted files recorded.", fg=typer.colors.YELLOW)
@@ -246,6 +253,61 @@ def clear_log():
         typer.secho("All entries in the encrypted files log have been cleared.", fg=typer.colors.GREEN)
     else:
         typer.secho("No encrypted files recorded.", fg=typer.colors.YELLOW)
+
+@app.command()
+def insert(shortcut_or_path: str, text: str, line: int = 1):
+    """Insert text into a specific line of an encrypted file."""
+    key = authenticate()
+    file_path = resolve_path(shortcut_or_path)
+    
+    # Verify that file exists
+    if not file_path.exists() or not file_path.is_file():
+        typer.secho("Error: Specified file does not exist. Please provide a valid file path or shortcut.", fg=typer.colors.RED)
+        raise typer.Exit()
+
+    fernet = Fernet(key)
+
+    # Read and decrypt the file
+    with open(file_path, "rb") as file:
+        encrypted_data = file.read()
+
+    try:
+        decrypted_data = fernet.decrypt(encrypted_data)
+    except InvalidToken:
+        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+        raise typer.Exit()
+
+    try:
+        # Convert bytes to string and split into lines
+        content = decrypted_data.decode('utf-8').splitlines()
+        
+        # Ensure line number is valid
+        if line < 1:
+            line = 1
+        if line > len(content) + 1:
+            line = len(content) + 1
+
+        # Insert the text at the specified line (adjusting for 0-based index)
+        content.insert(line - 1, text)
+        
+        # Join the lines back together
+        modified_content = '\n'.join(content)
+        
+        # Encrypt the modified content
+        encrypted_data = fernet.encrypt(modified_content.encode('utf-8'))
+        
+        # Save the modified file
+        with open(file_path, "wb") as file:
+            file.write(encrypted_data)
+
+        typer.secho(f"Text successfully inserted at line {line}.", fg=typer.colors.GREEN)
+
+    except UnicodeDecodeError:
+        typer.secho("The file appears to be binary or not a text file.", fg=typer.colors.RED)
+        raise typer.Exit()
+    except Exception as e:
+        typer.secho(f"Failed to insert text: {e}", fg=typer.colors.RED)
+        raise typer.Exit()
 
 if __name__ == "__main__":
     app()
