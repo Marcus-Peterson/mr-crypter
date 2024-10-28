@@ -1,4 +1,4 @@
-# Mr Crypter
+![Project Logo](./logo_.png)
 
 Mr Crypter is a command-line tool built using Python's `Typer` framework to provide encryption and decryption functionalities. 
 With Mr Crypter, users can securely encrypt and decrypt files using a password-based approach, as well as manage encrypted files conveniently.
