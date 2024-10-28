@@ -10,6 +10,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 - **Change Password**: Update the encryption password securely.
 - **List Encrypted Files**: Display a list of all files encrypted by Mr Crypter.
 - **Search Encrypted Files**: Search through encrypted files by filename or shortcut.
+- **Built-in Help**: Comprehensive help system with detailed command information.
 
 ## Installation: PIP
 
@@ -26,6 +27,22 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 
 ### Initial Setup
 When using Mr Crypter for the first time, you will need to set a password. This password will be used for encryption and decryption, use the `change-password` command to set the password.
+
+### Getting Help
+Mr Crypter includes a comprehensive help system. You can access it in two ways:
+
+```bash
+# Show all available commands and general help
+python main.py help
+
+# Get detailed help for a specific command
+python main.py help COMMAND
+```
+
+For example:
+```bash
+python main.py help encrypt
+```
 
 ### Commands
 Below are the commands available with Mr Crypter:
@@ -157,7 +174,13 @@ python main.py encrypt ~/Documents/sample.txt
 Decrypt the same file:
 
 ```bash
-python mr_crypter.py decrypt ~/Documents/sample.txt
+python main.py decrypt ~/Documents/sample.txt
+```
+
+Get help on encryption:
+
+```bash
+python main.py help encrypt
 ```
 
 ## License
