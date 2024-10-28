@@ -8,10 +8,10 @@
 
 ### Encryption Status and Metadata
 - **Description**: Store additional metadata like the date of encryption, file size, and encryption status.
-- **Output**: Display this metadata in the `list-encrypted-files` output, helping users quickly understand each file’s status.
+- **Output**: Display this metadata in the `list-files` output, helping users quickly understand each file’s status.
 
-### Searchable List of Encrypted Files
-- **Description**: Add a search command to filter encrypted files by name or shortcut, making it easy to locate specific files.
+~~### Searchable List of Encrypted Files~~
+~~- **Description**: Add a search command to filter encrypted files by name or shortcut, making it easy to locate specific files.~~ ✅
 
 ### Configurable Encryption Settings
 - **Description**: Allow users to specify encryption strength (e.g., AES-128, AES-256) and customize chunk size for file reading during encryption.
