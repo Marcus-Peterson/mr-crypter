@@ -352,5 +352,107 @@ def insert(shortcut_or_path: str, text: str, line: int = 1):
         typer.secho(f"Failed to insert text: {e}", fg=typer.colors.RED)
         raise typer.Exit()
 
+@app.command()
+def help(command: Optional[str] = typer.Argument(None, help="Command to get help for")):
+    """Show help information for a specific command or list all commands with their descriptions."""
+    if command is None:
+        # Create a table for all commands
+        table = Table(title="File Encryptor Commands")
+        table.add_column("Command", style="cyan", no_wrap=True)
+        table.add_column("Description", style="green")
+        table.add_column("Usage", style="yellow")
+
+        commands = {
+            "encrypt": ("Encrypt a file with password protection", "encrypt FILE_PATH"),
+            "decrypt": ("Decrypt a previously encrypted file", "decrypt FILE_PATH|SHORTCUT"),
+            "view": ("Temporarily decrypt and view file contents", "view FILE_PATH|SHORTCUT"),
+            "search": ("Search through encrypted files", "search QUERY [--shortcuts/--no-shortcuts] [--case-sensitive]"),
+            "list-files": ("List all encrypted files", "list-files"),
+            "clear-log": ("Clear the encrypted files log", "clear-log"),
+            "insert": ("Insert text into an encrypted file", "insert FILE_PATH|SHORTCUT \"TEXT\" [LINE]"),
+            "help": ("Show this help message", "help [COMMAND]")
+        }
+
+        for cmd_name, (desc, usage) in commands.items():
+            table.add_row(cmd_name, desc, usage)
+
+        console.print(table)
+        
+        # Print additional information
+        console.print("\n[bold]Notes:[/bold]")
+        console.print("• FILE_PATH can be the actual path to a file")
+        console.print("• SHORTCUT is the name you gave to the file during encryption")
+        console.print("• All commands will prompt for your password when needed")
+        console.print("\nFor detailed help on a specific command, use: [cyan]python main.py help COMMAND[/cyan]")
+        
+    else:
+        # Show detailed help for specific command
+        command = command.lower()
+        detailed_help = {
+            "encrypt": {
+                "description": "Encrypt a file with password protection",
+                "usage": "encrypt FILE_PATH",
+                "details": [
+                    "• Encrypts the specified file using your password",
+                    "• Prompts for a shortcut name to easily reference the file later",
+                    "• Original file is replaced with encrypted version",
+                    "• Records the encryption details in the tracking file"
+                ]
+            },
+            "decrypt": {
+                "description": "Decrypt a previously encrypted file",
+                "usage": "decrypt FILE_PATH|SHORTCUT",
+                "details": [
+                    "• Decrypts the specified file using your password",
+                    "• Can use either the file path or the shortcut name",
+                    "• Original encrypted file is replaced with decrypted version",
+                    "• Removes the file from the tracking log"
+                ]
+            },
+            "view": {
+                "description": "Temporarily decrypt and view file contents",
+                "usage": "view FILE_PATH|SHORTCUT",
+                "details": [
+                    "• Shows the decrypted contents of the file",
+                    "• Does not modify the original encrypted file",
+                    "• Can use either the file path or the shortcut name"
+                ]
+            },
+            "search": {
+                "description": "Search through encrypted files",
+                "usage": "search QUERY [--shortcuts/--no-shortcuts] [--case-sensitive]",
+                "details": [
+                    "• Searches through filenames and shortcuts",
+                    "• --shortcuts: Include shortcuts in search (default: yes)",
+                    "• --no-shortcuts: Exclude shortcuts from search",
+                    "• --case-sensitive: Make search case-sensitive (default: no)"
+                ]
+            },
+            "insert": {
+                "description": "Insert text into an encrypted file",
+                "usage": "insert FILE_PATH|SHORTCUT \"TEXT\" [LINE]",
+                "details": [
+                    "• Temporarily decrypts the file",
+                    "• Inserts the specified text at the given line number",
+                    "• Line number is optional (defaults to line 1)",
+                    "• Re-encrypts the file after insertion"
+                ]
+            }
+        }
+
+        if command not in detailed_help:
+            typer.secho(f"No detailed help available for '{command}'", fg=typer.colors.RED)
+            typer.secho("\nAvailable commands:", fg=typer.colors.YELLOW)
+            typer.secho("python main.py help", fg=typer.colors.GREEN)
+            return
+
+        help_info = detailed_help[command]
+        console.print(f"\n[bold cyan]{command}[/bold cyan]")
+        console.print(f"\n[bold]Description:[/bold] {help_info['description']}")
+        console.print(f"\n[bold]Usage:[/bold] python main.py {help_info['usage']}")
+        console.print("\n[bold]Details:[/bold]")
+        for detail in help_info['details']:
+            console.print(detail)
+
 if __name__ == "__main__":
     app()
