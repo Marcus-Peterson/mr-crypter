@@ -376,16 +376,16 @@ def search(
 
 def check_encryption_status(file_path: Path) -> bool:
     """
-    Check if a file is currently encrypted by attempting to decrypt it.
+    Check if a file is currently encrypted by checking Fernet format.
     Returns True if the file is encrypted, False if it's decrypted.
     """
     try:
         with open(file_path, "rb") as file:
             data = file.read()
-            # Try to base64 decode the first part of the file
-            # Fernet-encrypted files always start with a valid base64 string
-            base64.b64decode(data[:32])
-            return True
+            # Fernet tokens start with 'gAAAAA'
+            if data.startswith(b'gAAAAA'):
+                return True
+            return False
     except Exception:
         return False
 
