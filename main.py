@@ -331,8 +331,10 @@ def search(
 ) -> None:
     """Search through encrypted files by filename or shortcut."""
     try:
-        # Read CSV with proper column names
-        files_df = pd.read_csv(TRACKING_FILE, names=['filename', 'filepath', 'shortcut'])
+        # Read CSV with all column names
+        files_df = pd.read_csv(TRACKING_FILE, names=[
+            'filename', 'filepath', 'shortcut', 'encryption_date', 'size', 'status'
+        ])
         
         # Prepare search query
         if not case_sensitive:
@@ -358,13 +360,15 @@ def search(
         table = Table(title=f"Search Results for '{query}'")
         table.add_column("Filename", style="cyan")
         table.add_column("Shortcut", style="green")
-        table.add_column("Encrypted Path", style="blue")
+        table.add_column("Location", style="blue")
+        table.add_column("Status", style="red")
         
         for _, row in results.iterrows():
             table.add_row(
                 row['filename'],
                 row['shortcut'],
-                row['filepath']
+                row['filepath'],
+                row['status']
             )
         
         rprint(table)
