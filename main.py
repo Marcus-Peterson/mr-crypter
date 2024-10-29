@@ -22,6 +22,7 @@ import string
 import codecs
 import pandas as pd
 import base64
+from datetime import datetime
 app = typer.Typer()
 
 # Configuration constants
@@ -86,7 +87,12 @@ def record_encryption(file_path: Path, shortcut: str):
     """Record encrypted file details to the tracking CSV if not already recorded, with a shortcut."""
     CONFIG_DIR.mkdir(exist_ok=True)
 
-    # Check if the file or shortcut is already recorded to avoid duplicates
+    # Get file metadata
+    file_stats = file_path.stat()
+    encryption_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_size = file_stats.st_size
+    
+    # Check if the file or shortcut is already recorded
     if TRACKING_FILE.exists():
         with open(TRACKING_FILE, "r") as csvfile:
             csv_reader = csv.reader(csvfile)
@@ -95,10 +101,17 @@ def record_encryption(file_path: Path, shortcut: str):
                     typer.secho("File or shortcut already exists in the log.", fg=typer.colors.RED)
                     return
 
-    # Record file details with shortcut
+    # Record file details with metadata
     with open(TRACKING_FILE, mode="a", newline="") as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow([file_path.name, str(file_path.resolve()), shortcut])
+        csv_writer.writerow([
+            file_path.name,                  # filename
+            str(file_path.resolve()),        # filepath
+            shortcut,                        # shortcut
+            encryption_date,                 # encryption date
+            file_size,                       # file size in bytes
+            "encrypted"                      # encryption status
+        ])
 
 def remove_from_log(file_path: Path):
     """Remove a specific file entry from the tracking CSV."""
@@ -136,29 +149,38 @@ def encrypt(file_path: Path):
         typer.secho("Error: Specified file does not exist.", fg=typer.colors.RED)
         raise typer.Exit()
 
-    key = authenticate()
-    fernet = Fernet(key)
-    shortcut = typer.prompt("Enter a shortcut name for this file")
-    
-    file_size = file_path.stat().st_size
-
-    with Progress(console=console) as progress:
-        task = progress.add_task("Encrypting...", total=file_size)
+    try:
+        key = authenticate()
+        fernet = Fernet(key)
+        shortcut = typer.prompt("Enter a shortcut name for this file")
         
-        # Read the entire file as binary
-        with open(file_path, "rb") as file:
-            data = file.read()
-            progress.update(task, advance=file_size)
+        file_size = file_path.stat().st_size
 
-        # Encrypt the entire binary data at once
-        encrypted_data = fernet.encrypt(data)
+        with Progress(console=console) as progress:
+            task = progress.add_task("Encrypting...", total=file_size)
+            
+            # Read the entire file as binary
+            with open(file_path, "rb") as file:
+                data = file.read()
+                progress.update(task, advance=file_size)
+
+            # Encrypt the entire binary data at once
+            encrypted_data = fernet.encrypt(data)
+            
+            # Write the encrypted data
+            with open(file_path, "wb") as file:
+                file.write(encrypted_data)
+
+        # First record the encryption if it's a new file
+        record_encryption(file_path, shortcut)
         
-        # Write the encrypted data
-        with open(file_path, "wb") as file:
-            file.write(encrypted_data)
-
-    record_encryption(file_path, shortcut)
-    typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
+        # Then update the status (this will work for both new and existing files)
+        update_file_status(file_path, "encrypted")
+        typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
+        
+    except Exception as e:
+        typer.secho(f"Error during encryption: {str(e)}", fg=typer.colors.RED)
+        raise typer.Exit()
 
 @app.command()
 def decrypt(shortcut_or_path: str):
@@ -173,27 +195,33 @@ def decrypt(shortcut_or_path: str):
     fernet = Fernet(key)
     file_size = file_path.stat().st_size
 
-    with Progress(console=console) as progress:
-        task = progress.add_task("Decrypting...", total=file_size)
+    try:
+        with Progress(console=console) as progress:
+            task = progress.add_task("Decrypting...", total=file_size)
+            
+            # Read the encrypted data
+            with open(file_path, "rb") as file:
+                encrypted_data = file.read()
+                progress.update(task, advance=file_size)
+
+            try:
+                # Decrypt the entire binary data at once
+                decrypted_data = fernet.decrypt(encrypted_data)
+            except InvalidToken:
+                typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+                raise typer.Exit()
+
+            # Write the decrypted data
+            with open(file_path, "wb") as file:
+                file.write(decrypted_data)
+
+        # Update status after successful decryption
+        update_file_status(file_path, "decrypted")
+        typer.secho(f"File decrypted successfully.", fg=typer.colors.GREEN)
         
-        # Read the encrypted data
-        with open(file_path, "rb") as file:
-            encrypted_data = file.read()
-            progress.update(task, advance=file_size)
-
-        try:
-            # Decrypt the entire binary data at once
-            decrypted_data = fernet.decrypt(encrypted_data)
-        except InvalidToken:
-            typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-            raise typer.Exit()
-
-        # Write the decrypted data
-        with open(file_path, "wb") as file:
-            file.write(decrypted_data)
-
-    remove_from_log(file_path)
-    typer.secho(f"File decrypted successfully.", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"Error during decryption: {str(e)}", fg=typer.colors.RED)
+        raise typer.Exit()
 
 @app.command()
 def view(shortcut_or_path: str):
@@ -269,6 +297,21 @@ def search(
     except Exception as e:
         rprint(f"[red]Error searching files: {str(e)}[/red]")
 
+def check_encryption_status(file_path: Path) -> bool:
+    """
+    Check if a file is currently encrypted by attempting to decrypt it.
+    Returns True if the file is encrypted, False if it's decrypted.
+    """
+    try:
+        with open(file_path, "rb") as file:
+            data = file.read()
+            # Try to base64 decode the first part of the file
+            # Fernet-encrypted files always start with a valid base64 string
+            base64.b64decode(data[:32])
+            return True
+    except Exception:
+        return False
+
 @app.command()
 def list_files():
     """List all files encrypted by this program with pretty formatting."""
@@ -280,11 +323,42 @@ def list_files():
     table.add_column("File Name", style="cyan", no_wrap=True)
     table.add_column("Location", style="magenta")
     table.add_column("Shortcut", style="green")
+    table.add_column("Encrypted On", style="yellow")
+    table.add_column("Size", style="blue")
+    table.add_column("Status", style="red")
 
     with open(TRACKING_FILE, mode="r") as csvfile:
         csv_reader = csv.reader(csvfile)
         for row in csv_reader:
-            table.add_row(row[0], row[1], row[2])
+            file_path = Path(row[1])
+            
+            # Check actual encryption status
+            if file_path.exists():
+                current_status = "encrypted" if check_encryption_status(file_path) else "decrypted"
+                if current_status != row[5]:
+                    # Update status in tracking file if it doesn't match
+                    update_file_status(file_path, current_status)
+                    row[5] = current_status
+            else:
+                row[5] = "file not found"
+
+            # Convert file size to human-readable format
+            size_bytes = int(row[4])
+            if size_bytes < 1024:
+                size_str = f"{size_bytes}B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes/1024:.1f}KB"
+            else:
+                size_str = f"{size_bytes/(1024*1024):.1f}MB"
+            
+            table.add_row(
+                row[0],          # filename
+                row[1],          # filepath
+                row[2],          # shortcut
+                row[3],          # encryption date
+                size_str,        # file size
+                row[5]           # status
+            )
     
     console.print(table)
 
@@ -453,6 +527,39 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         console.print("\n[bold]Details:[/bold]")
         for detail in help_info['details']:
             console.print(detail)
+
+def update_file_status(file_path: Path, new_status: str):
+    """Update the status of a file in the tracking CSV."""
+    if not TRACKING_FILE.exists():
+        typer.secho("No tracking file found.", fg=typer.colors.YELLOW)
+        return
+    
+    try:
+        # Read all entries
+        rows = []
+        updated = False
+        file_path_str = str(file_path.resolve())
+        
+        with open(TRACKING_FILE, "r", newline='') as csvfile:
+            csv_reader = csv.reader(csvfile)
+            for row in csv_reader:
+                if row[1] == file_path_str:
+                    row[5] = new_status  # Update status
+                    updated = True
+                    typer.secho(f"Updating status for {file_path.name} to {new_status}", fg=typer.colors.BLUE)
+                rows.append(row)
+        
+        if updated:
+            # Write back all entries with updated status
+            with open(TRACKING_FILE, "w", newline='') as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerows(rows)
+            typer.secho(f"Status updated successfully to {new_status}", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"File {file_path.name} not found in tracking file", fg=typer.colors.YELLOW)
+            
+    except Exception as e:
+        typer.secho(f"Error updating file status: {str(e)}", fg=typer.colors.RED)
 
 if __name__ == "__main__":
     app()
