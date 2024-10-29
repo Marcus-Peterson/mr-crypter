@@ -1,5 +1,6 @@
 typer==0.4.1
 cryptography==39.0.1
 rich==13.4.2
+PyMuPDF
 pandas==2.2.3
-pymupdf
+
