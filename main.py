@@ -23,6 +23,9 @@ import codecs
 import pandas as pd
 import base64
 from datetime import datetime
+from rich.syntax import Syntax
+from rich.panel import Panel
+from rich.padding import Padding
 app = typer.Typer()
 
 # Configuration constants
@@ -241,8 +244,82 @@ def view(shortcut_or_path: str):
 
     try:
         decrypted_data = fernet.decrypt(encrypted_data)
-        typer.echo(decrypted_data.decode())  # Display content
-    except Exception:
+        content = decrypted_data.decode()
+        
+        # Create a syntax highlighted panel with line numbers
+        from rich.syntax import Syntax
+        from rich.panel import Panel
+        from rich.padding import Padding
+        
+        # Try to detect the file type for syntax highlighting
+        file_extension = file_path.suffix.lower()
+        lexer_map = {
+            '.py': 'python',
+            '.js': 'javascript',
+            '.html': 'html',
+            '.css': 'css',
+            '.json': 'json',
+            '.xml': 'xml',
+            '.md': 'markdown',
+            '.txt': 'text',
+            '.sh': 'bash',
+            '.yml': 'yaml',
+            '.yaml': 'yaml',
+            '.sql': 'sql',
+            '.ini': 'ini',
+            '.conf': 'ini',
+            '.env': 'env',
+        }
+        
+        # Default to 'text' if extension not recognized
+        lexer = lexer_map.get(file_extension, 'text')
+        
+        # Create syntax highlighted content with line numbers
+        syntax = Syntax(
+            content,
+            lexer,
+            line_numbers=True,
+            word_wrap=True,
+            theme="monokai",  # You can change the theme here
+            padding=1
+        )
+        
+        # Create a panel with the file info and content
+        panel = Panel(
+            syntax,
+            title=f"[bold blue]{file_path.name}[/bold blue]",
+            subtitle=f"[italic]{len(content.splitlines())} lines[/italic]",
+            border_style="blue"
+        )
+        
+        # Clear the screen for better presentation
+        console.clear()
+        
+        # Print file metadata
+        console.print(f"\n[bold yellow]File Information:[/bold yellow]")
+        console.print(f"[cyan]Location:[/cyan] {file_path}")
+        console.print(f"[cyan]Size:[/cyan] {file_path.stat().st_size:,} bytes")
+        console.print(f"[cyan]Type:[/cyan] {lexer.upper()}\n")
+        
+        # Print the content panel
+        console.print(panel)
+        
+        # Print help text at the bottom
+        console.print("\n[dim]Press Ctrl+C to exit[/dim]")
+        
+    except UnicodeDecodeError:
+        # Handle binary files
+        console.print("[yellow]Warning: This appears to be a binary file.[/yellow]")
+        console.print("\n[bold]Hex View:[/bold]")
+        
+        # Replace rich.hex import and Hex view with simple hex dump
+        hex_lines = [decrypted_data[i:i+16].hex(' ') for i in range(0, min(512, len(decrypted_data)), 16)]
+        console.print("\n".join(hex_lines))
+        
+        if len(decrypted_data) > 512:
+            console.print("\n[dim]... (showing first 512 bytes only)[/dim]")
+            
+    except Exception as e:
         typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
         raise typer.Exit()
 
