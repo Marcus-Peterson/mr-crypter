@@ -23,6 +23,21 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 
 3. Make sure to have `Python 3.7` or above installed.
 
+## Installation: Unix & Windows
+
+### For unix based systems
+Use the `install.sh` script if you want easy installation. And make it available from anywhere.
+```bash
+./install.sh
+```
+### For windows based systems
+Use the `install.py` script if you want easy installation. And make it available from anywhere.
+```bash
+python install.py
+```
+After installation, you can use `mr-crypter` [COMMAND] from anywhere.
+
+
 ## Usage
 
 ### Initial Setup
@@ -144,19 +159,6 @@ Mr Crypter uses the following configuration files and directories to manage encr
 - **Config Hash**: `config.hash` - Stores the password hash.
 - **Encrypted Files Log**: `encrypted_files.csv` - Logs all encrypted files.
 
-## Installation: Unix & Windows
-
-### For unix based systems
-Use the `install.sh` script if you want easy installation. And make it available from anywhere.
-```bash
-./install.sh
-```
-### For windows based systems
-Use the `install.py` script if you want easy installation. And make it available from anywhere.
-```bash
-python install.py
-```
-After installation, you can use `mr-crypter` [COMMAND] from anywhere.
 
 ## Security Notes
 - Your password is hashed and stored securely; however, remember that if you forget the password, encrypted files cannot be decrypted.
