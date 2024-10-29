@@ -336,28 +336,47 @@ def search(
             'filename', 'filepath', 'shortcut', 'encryption_date', 'size', 'status'
         ])
         
-        # Prepare search query
-        if not case_sensitive:
-            query = query.lower()
-            files_df['filename'] = files_df['filename'].str.lower()
-            files_df['shortcut'] = files_df['shortcut'].str.lower()
+        # Special handling for status-based searches
+        status_keywords = {
+            'encrypted': ['encrypt', 'encrypted', 'enc'],
+            'decrypted': ['decrypt', 'decrypted', 'dec']
+        }
         
-        # Create mask for filename matches
-        mask = files_df['filename'].str.contains(query, na=False)
+        # Check if query matches any status keywords
+        status_search = None
+        query_lower = query.lower()
+        for status, keywords in status_keywords.items():
+            if query_lower in keywords:
+                status_search = status
+                break
         
-        # Add shortcut matches if enabled
-        if search_shortcuts:
-            mask |= files_df['shortcut'].str.contains(query, na=False)
-        
-        # Filter results
-        results = files_df[mask]
+        if status_search:
+            # Filter by status
+            results = files_df[files_df['status'] == status_search]
+            title = f"Files that are {status_search}"
+        else:
+            # Regular search
+            if not case_sensitive:
+                query = query.lower()
+                files_df['filename'] = files_df['filename'].str.lower()
+                files_df['shortcut'] = files_df['shortcut'].str.lower()
+            
+            # Create mask for filename matches
+            mask = files_df['filename'].str.contains(query, na=False)
+            
+            # Add shortcut matches if enabled
+            if search_shortcuts:
+                mask |= files_df['shortcut'].str.contains(query, na=False)
+            
+            results = files_df[mask]
+            title = f"Search Results for '{query}'"
         
         if len(results) == 0:
             rprint(f"[yellow]No files found matching '{query}'[/yellow]")
             return
         
         # Display results in a table
-        table = Table(title=f"Search Results for '{query}'")
+        table = Table(title=title)
         table.add_column("Filename", style="cyan")
         table.add_column("Shortcut", style="green")
         table.add_column("Location", style="blue")
