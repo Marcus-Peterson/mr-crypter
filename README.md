@@ -14,7 +14,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 
 ## Installation: PIP
 
-1. Clone the repository or copy the `mr_crypter.py` file to your project directory.
+1. Clone the repository or copy the `main.py` file to your project directory.
 2. Install the required dependencies by running:
 
     ```bash
