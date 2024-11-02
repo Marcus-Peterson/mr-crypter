@@ -86,11 +86,26 @@ python main.py decrypt SHORTCUT
 Read and display the content of an encrypted file without modifying it.
 
 ```bash
-python main.py view FILE_PATH
+python main.py view FILE_PATH [--lines NUMBER]
 ```
 #### or
 ```bash
-python main.py view SHORTCUT
+python main.py view SHORTCUT [--lines NUMBER]
+```
+
+Options:
+- `--lines`, `-n`: Number of lines to display (optional)
+
+Examples:
+```bash
+# View entire file
+python main.py view document.txt
+
+# View first 10 lines only
+python main.py view document.txt --lines 10
+
+# View first 5 lines using shortcut
+python main.py view doc_shortcut -n 5
 ```
 
 ----------------------------------------------------------
