@@ -146,82 +146,187 @@ def resolve_path(shortcut_or_path: str) -> Path:
     return Path(shortcut_or_path)
 
 @app.command()
-def encrypt(file_path: Path):
-    """Encrypt a file with a progress bar and record it with a shortcut name."""
-    if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: Specified file does not exist.", fg=typer.colors.RED)
+def encrypt(
+    path: Path = typer.Argument(..., help="File or directory to encrypt"),
+    pattern: str = typer.Option("*", help="File pattern to match when encrypting a directory (e.g., *.txt)"),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
+):
+    """Encrypt a file or all files in a directory."""
+    if not path.exists():
+        typer.secho("Error: Specified path does not exist.", fg=typer.colors.RED)
         raise typer.Exit()
 
     try:
         key = authenticate()
         fernet = Fernet(key)
-        shortcut = typer.prompt("Enter a shortcut name for this file")
-        
-        file_size = file_path.stat().st_size
 
-        with Progress(console=console) as progress:
-            task = progress.add_task("Encrypting...", total=file_size)
+        # Handle directory encryption
+        if path.is_dir():
+            # Collect files to process
+            if recursive:
+                files = list(path.rglob(pattern))
+            else:
+                files = list(path.glob(pattern))
+
+            # Filter out directories
+            files = [f for f in files if f.is_file()]
+
+            if not files:
+                typer.secho(f"No files matching pattern '{pattern}' found in {path}", fg=typer.colors.YELLOW)
+                return
+
+            # Confirm with user
+            typer.echo(f"\nFound {len(files)} files to encrypt:")
+            for f in files:
+                typer.echo(f"  • {f.relative_to(path)}")
             
-            # Read the entire file as binary
-            with open(file_path, "rb") as file:
-                data = file.read()
-                progress.update(task, advance=file_size)
+            if not typer.confirm("\nDo you want to proceed with encryption?"):
+                typer.echo("Operation cancelled.")
+                return
 
-            # Encrypt the entire binary data at once
-            encrypted_data = fernet.encrypt(data)
+            # Process files with progress bar
+            with Progress(console=console) as progress:
+                task = progress.add_task("Encrypting files...", total=len(files))
+                
+                for file_path in files:
+                    try:
+                        # Generate a shortcut based on relative path
+                        shortcut = str(file_path.relative_to(path)).replace('\\', '_').replace('/', '_')
+                        
+                        # Read and encrypt
+                        with open(file_path, "rb") as file:
+                            data = file.read()
+                        encrypted_data = fernet.encrypt(data)
+                        
+                        # Write encrypted data
+                        with open(file_path, "wb") as file:
+                            file.write(encrypted_data)
+                        
+                        # Record encryption
+                        record_encryption(file_path, shortcut)
+                        update_file_status(file_path, "encrypted")
+                        
+                        progress.advance(task)
+                        
+                    except Exception as e:
+                        typer.secho(f"Failed to encrypt {file_path.name}: {str(e)}", fg=typer.colors.RED)
+
+            typer.secho("\nBatch encryption completed!", fg=typer.colors.GREEN)
+
+        # Handle single file encryption
+        else:
+            shortcut = typer.prompt("Enter a shortcut name for this file")
+            file_size = path.stat().st_size
+
+            with Progress(console=console) as progress:
+                task = progress.add_task("Encrypting...", total=file_size)
+                
+                with open(path, "rb") as file:
+                    data = file.read()
+                    progress.update(task, advance=file_size)
+
+                encrypted_data = fernet.encrypt(data)
+                
+                with open(path, "wb") as file:
+                    file.write(encrypted_data)
+
+            record_encryption(path, shortcut)
+            update_file_status(path, "encrypted")
+            typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
             
-            # Write the encrypted data
-            with open(file_path, "wb") as file:
-                file.write(encrypted_data)
-
-        # First record the encryption if it's a new file
-        record_encryption(file_path, shortcut)
-        
-        # Then update the status (this will work for both new and existing files)
-        update_file_status(file_path, "encrypted")
-        typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
-        
     except Exception as e:
         typer.secho(f"Error during encryption: {str(e)}", fg=typer.colors.RED)
         raise typer.Exit()
 
 @app.command()
-def decrypt(shortcut_or_path: str):
-    """Decrypt a file using its path or shortcut."""
+def decrypt(
+    path: str = typer.Argument(..., help="File/directory path or shortcut to decrypt"),
+    pattern: str = typer.Option("*", help="File pattern to match when decrypting a directory (e.g., *.txt)"),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
+):
+    """Decrypt a file or all files in a directory."""
     key = authenticate()
-    file_path = resolve_path(shortcut_or_path)
+    file_path = resolve_path(path)
     
-    if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: File does not exist.", fg=typer.colors.RED)
+    if not file_path.exists():
+        typer.secho("Error: Path does not exist.", fg=typer.colors.RED)
         raise typer.Exit()
     
     fernet = Fernet(key)
-    file_size = file_path.stat().st_size
 
     try:
-        with Progress(console=console) as progress:
-            task = progress.add_task("Decrypting...", total=file_size)
+        # Handle directory decryption
+        if file_path.is_dir():
+            # Collect files to process
+            if recursive:
+                files = list(file_path.rglob(pattern))
+            else:
+                files = list(file_path.glob(pattern))
+
+            # Filter out directories and verify files are tracked
+            tracked_files = []
+            if TRACKING_FILE.exists():
+                with open(TRACKING_FILE, "r") as csvfile:
+                    csv_reader = csv.reader(csvfile)
+                    tracked_paths = {Path(row[1]) for row in csv_reader}
+                    tracked_files = [f for f in files if f.is_file() and f in tracked_paths]
+
+            if not tracked_files:
+                typer.secho(f"No encrypted files matching pattern '{pattern}' found in {file_path}", fg=typer.colors.YELLOW)
+                return
+
+            # Confirm with user
+            typer.echo(f"\nFound {len(tracked_files)} encrypted files to decrypt:")
+            for f in tracked_files:
+                typer.echo(f"  • {f.relative_to(file_path)}")
             
-            # Read the encrypted data
-            with open(file_path, "rb") as file:
-                encrypted_data = file.read()
-                progress.update(task, advance=file_size)
+            if not typer.confirm("\nDo you want to proceed with decryption?"):
+                typer.echo("Operation cancelled.")
+                return
 
-            try:
-                # Decrypt the entire binary data at once
-                decrypted_data = fernet.decrypt(encrypted_data)
-            except InvalidToken:
-                typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-                raise typer.Exit()
+            # Process files with progress bar
+            with Progress(console=console) as progress:
+                task = progress.add_task("Decrypting files...", total=len(tracked_files))
+                
+                for file_path in tracked_files:
+                    try:
+                        with open(file_path, "rb") as file:
+                            encrypted_data = file.read()
+                        decrypted_data = fernet.decrypt(encrypted_data)
+                        
+                        with open(file_path, "wb") as file:
+                            file.write(decrypted_data)
+                        
+                        update_file_status(file_path, "decrypted")
+                        progress.advance(task)
+                        
+                    except Exception as e:
+                        typer.secho(f"Failed to decrypt {file_path.name}: {str(e)}", fg=typer.colors.RED)
 
-            # Write the decrypted data
-            with open(file_path, "wb") as file:
-                file.write(decrypted_data)
+            typer.secho("\nBatch decryption completed!", fg=typer.colors.GREEN)
 
-        # Update status after successful decryption
-        update_file_status(file_path, "decrypted")
-        typer.secho(f"File decrypted successfully.", fg=typer.colors.GREEN)
-        
+        # Handle single file decryption
+        else:
+            file_size = file_path.stat().st_size
+            with Progress(console=console) as progress:
+                task = progress.add_task("Decrypting...", total=file_size)
+                
+                with open(file_path, "rb") as file:
+                    encrypted_data = file.read()
+                    progress.update(task, advance=file_size)
+
+                try:
+                    decrypted_data = fernet.decrypt(encrypted_data)
+                except InvalidToken:
+                    typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+                    raise typer.Exit()
+
+                with open(file_path, "wb") as file:
+                    file.write(decrypted_data)
+
+            update_file_status(file_path, "decrypted")
+            typer.secho("File decrypted successfully.", fg=typer.colors.GREEN)
+            
     except Exception as e:
         typer.secho(f"Error during decryption: {str(e)}", fg=typer.colors.RED)
         raise typer.Exit()
@@ -561,8 +666,8 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         table.add_column("Usage", style="yellow")
 
         commands = {
-            "encrypt": ("Encrypt a file with password protection", "encrypt FILE_PATH"),
-            "decrypt": ("Decrypt a previously encrypted file", "decrypt FILE_PATH|SHORTCUT"),
+            "encrypt": ("Encrypt a file or directory", "encrypt PATH [--pattern PATTERN] [--recursive]"),
+            "decrypt": ("Decrypt a file or directory", "decrypt PATH|SHORTCUT [--pattern PATTERN] [--recursive]"),
             "view": ("Temporarily decrypt and view file contents", "view FILE_PATH|SHORTCUT [--lines NUMBER]"),
             "search": ("Search through encrypted files", "search QUERY [--shortcuts/--no-shortcuts] [--case-sensitive]"),
             "list-files": ("List all encrypted files", "list-files"),
@@ -578,7 +683,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         
         # Print additional information
         console.print("\n[bold]Notes:[/bold]")
-        console.print("• FILE_PATH can be the actual path to a file")
+        console.print("• PATH can be the actual path to a file or directory")
         console.print("• SHORTCUT is the name you gave to the file during encryption")
         console.print("• All commands will prompt for your password when needed")
         console.print("\nFor detailed help on a specific command, use: [cyan]python main.py help COMMAND[/cyan]")
@@ -588,23 +693,25 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         command = command.lower()
         detailed_help = {
             "encrypt": {
-                "description": "Encrypt a file with password protection",
-                "usage": "encrypt FILE_PATH",
+                "description": "Encrypt a file or directory",
+                "usage": "encrypt PATH [--pattern PATTERN] [--recursive]",
                 "details": [
-                    "• Encrypts the specified file using your password",
-                    "• Prompts for a shortcut name to easily reference the file later",
-                    "• Original file is replaced with encrypted version",
-                    "• Records the encryption details in the tracking file"
+                    "• Encrypts a single file or all files in a directory",
+                    "• Prompts for a shortcut name for single files",
+                    "• Optional pattern matching for directories (e.g., *.txt)",
+                    "• --recursive flag to process subdirectories",
+                    "• Records encryption details in the tracking file"
                 ]
             },
             "decrypt": {
-                "description": "Decrypt a previously encrypted file",
-                "usage": "decrypt FILE_PATH|SHORTCUT",
+                "description": "Decrypt a file or directory",
+                "usage": "decrypt PATH|SHORTCUT [--pattern PATTERN] [--recursive]",
                 "details": [
-                    "• Decrypts the specified file using your password",
-                    "• Can use either the file path or the shortcut name",
-                    "• Original encrypted file is replaced with decrypted version",
-                    "• Removes the file from the tracking log"
+                    "• Decrypts a single file or all files in a directory",
+                    "• Can use file path or shortcut for single files",
+                    "• Optional pattern matching for directories (e.g., *.txt)",
+                    "• --recursive flag to process subdirectories",
+                    "• Updates tracking information automatically"
                 ]
             },
             "view": {
