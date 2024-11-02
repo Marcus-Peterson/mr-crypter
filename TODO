@@ -6,9 +6,9 @@
 - **Description**: Allow users to press a key to auto-complete a shortcut based on stored shortcuts, speeding up workflows and minimizing typing errors.
 - **Implementation**: Utilize libraries like `prompt_toolkit` with `typer` to enable autocomplete for shortcuts.
 
-### Encryption Status and Metadata
-- **Description**: Store additional metadata like the date of encryption, file size, and encryption status.
-- **Output**: Display this metadata in the `list-files` output, helping users quickly understand each file’s status.
+~~### Encryption Status and Metadata~~
+~~- **Description**: Store additional metadata like the date of encryption, file size, and encryption status.~~
+~~- **Output**: Display this metadata in the `list-files` output, helping users quickly understand each file’s status.~~ ✅
 
 ~~### Searchable List of Encrypted Files~~
 ~~- **Description**: Add a search command to filter encrypted files by name or shortcut, making it easy to locate specific files.~~ ✅
@@ -24,25 +24,25 @@
 - **Description**: Keep a record of encryption and decryption events with timestamps, allowing users to track access history for each file.
 
 ### Batch Encryption/Decryption
-- **Description**: Support batch processing by enabling users to encrypt or decrypt multiple files simultaneously by specifying a directory or a list of files.
-- **Implementation**: Introduce `batch-encrypt` or `batch-decrypt` commands to process all files in a specified folder.
+- **Description**: Support batch processing by enabling users to encrypt or decrypt multiple files simultaneously by specifying a directory.
+- **Implementation**: Introduce `batch-encrypt` and `batch-decrypt` commands to process all files in a specified folder.
 
 # UI/UX Improvements
 
-### Enhanced Loading Bar with Rich Progress
-- **Description**: Provide more detailed feedback during encryption/decryption, showing elapsed time, estimated remaining time, and progress percentage.
-- **Implementation**: Use `Rich`’s `Progress` component for a more granular loading experience.
+~~### Enhanced Loading Bar with Rich Progress~~
+~~- **Description**: Provide more detailed feedback during encryption/decryption, showing elapsed time, estimated remaining time, and progress percentage.~~
+~~- **Implementation**: Use `Rich`’s `Progress` component for a more granular loading experience.~~ ✅
 
 ### Detailed Error Messages with Suggestions
-- **Description**: Instead of generic error messages like "File not found" or "Incorrect password," provide context and suggestions (e.g., “Did you mean to use the `list-encrypted-files` command?”).
+- **Description**: Instead of generic error messages like "File not found" or "Incorrect password," provide context and suggestions (e.g., “Did you mean to use the `list-files` command?”).
 - **Implementation**: Achieve this with `typer`’s exception handling.
 
-### File Preview Option with Line Limit
-- **Description**: When viewing an encrypted file, display only the first few lines by default and allow users to specify how many lines they want to view (e.g., `--lines 10`).
-- **Benefit**: Helps avoid overloading the terminal when viewing large files.
+~~### File Preview Option with Line Limit~~
+~~- **Description**: When viewing an encrypted file, display only the first few lines by default and allow users to specify how many lines they want to view (e.g., `--lines 10`).~~
+~~- **Benefit**: Helps avoid overloading the terminal when viewing large files.~~ ✅
 
-### Color-Coded File Status
-- **Description**: Use color codes to visually distinguish encrypted (e.g., red) and decrypted (e.g., green) files in lists for easy identification.
+~~### Color-Coded File Status~~
+~~- **Description**: Use color codes to visually distinguish encrypted (e.g., red) and decrypted (e.g., green) files in lists for easy identification.~~ ✅
 
 ### Interactive Menu for Commands
 - **Description**: Implement an interactive menu system to guide users through different commands without needing to type each one manually.
