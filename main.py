@@ -391,14 +391,21 @@ def search(
         table.add_column("Filename", style="cyan")
         table.add_column("Shortcut", style="green")
         table.add_column("Location", style="blue")
-        table.add_column("Status", style="red")
+        table.add_column("Status")  # Removed default style for color-coding
         
         for _, row in results.iterrows():
+            # Color-code the status
+            status_style = {
+                "encrypted": "[green]encrypted[/green]",
+                "decrypted": "[red]decrypted[/red]",
+                "file not found": "[yellow]file not found[/yellow]"
+            }.get(row['status'], row['status'])
+            
             table.add_row(
                 row['filename'],
                 row['shortcut'],
                 row['filepath'],
-                row['status']
+                status_style
             )
         
         rprint(table)
@@ -436,7 +443,7 @@ def list_files():
     table.add_column("Shortcut", style="green")
     table.add_column("Encrypted On", style="yellow")
     table.add_column("Size", style="blue")
-    table.add_column("Status", style="red")
+    table.add_column("Status")  # Removed default style as we'll color-code each status
 
     with open(TRACKING_FILE, mode="r") as csvfile:
         csv_reader = csv.reader(csvfile)
@@ -447,12 +454,18 @@ def list_files():
             if file_path.exists():
                 current_status = "encrypted" if check_encryption_status(file_path) else "decrypted"
                 if current_status != row[5]:
-                    # Update status in tracking file if it doesn't match
                     update_file_status(file_path, current_status)
                     row[5] = current_status
             else:
                 row[5] = "file not found"
 
+            # Color-code the status
+            status_style = {
+                "encrypted": "[green]encrypted[/green]",
+                "decrypted": "[red]decrypted[/red]",
+                "file not found": "[yellow]file not found[/yellow]"
+            }.get(row[5], row[5])
+            
             # Convert file size to human-readable format
             size_bytes = int(row[4])
             if size_bytes < 1024:
@@ -468,7 +481,7 @@ def list_files():
                 row[2],          # shortcut
                 row[3],          # encryption date
                 size_str,        # file size
-                row[5]           # status
+                status_style     # colored status
             )
     
     console.print(table)
