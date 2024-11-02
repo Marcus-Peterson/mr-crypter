@@ -227,7 +227,10 @@ def decrypt(shortcut_or_path: str):
         raise typer.Exit()
 
 @app.command()
-def view(shortcut_or_path: str):
+def view(
+    shortcut_or_path: str,
+    lines: Optional[int] = typer.Option(None, "--lines", "-n", help="Number of lines to display")
+):
     """Temporarily decrypt and view a file's content using its path or shortcut."""
     key = authenticate()
     file_path = resolve_path(shortcut_or_path)
@@ -246,10 +249,13 @@ def view(shortcut_or_path: str):
         decrypted_data = fernet.decrypt(encrypted_data)
         content = decrypted_data.decode()
         
-        # Create a syntax highlighted panel with line numbers
-        from rich.syntax import Syntax
-        from rich.panel import Panel
-        from rich.padding import Padding
+        # If lines parameter is specified, limit the content
+        if lines is not None:
+            if lines <= 0:
+                typer.secho("Line count must be positive.", fg=typer.colors.RED)
+                raise typer.Exit()
+            content_lines = content.splitlines()[:lines]
+            content = '\n'.join(content_lines)
         
         # Try to detect the file type for syntax highlighting
         file_extension = file_path.suffix.lower()
@@ -285,10 +291,15 @@ def view(shortcut_or_path: str):
         )
         
         # Create a panel with the file info and content
+        total_lines = len(decrypted_data.decode().splitlines())
+        panel_title = f"[bold blue]{file_path.name}[/bold blue]"
+        if lines:
+            panel_title += f" [italic](showing first {lines} of {total_lines} lines)[/italic]"
+        
         panel = Panel(
             syntax,
-            title=f"[bold blue]{file_path.name}[/bold blue]",
-            subtitle=f"[italic]{len(content.splitlines())} lines[/italic]",
+            title=panel_title,
+            subtitle=f"[italic]{total_lines} lines total[/italic]",
             border_style="blue"
         )
         
@@ -539,7 +550,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         commands = {
             "encrypt": ("Encrypt a file with password protection", "encrypt FILE_PATH"),
             "decrypt": ("Decrypt a previously encrypted file", "decrypt FILE_PATH|SHORTCUT"),
-            "view": ("Temporarily decrypt and view file contents", "view FILE_PATH|SHORTCUT"),
+            "view": ("Temporarily decrypt and view file contents", "view FILE_PATH|SHORTCUT [--lines NUMBER]"),
             "search": ("Search through encrypted files", "search QUERY [--shortcuts/--no-shortcuts] [--case-sensitive]"),
             "list-files": ("List all encrypted files", "list-files"),
             "clear-log": ("Clear the encrypted files log", "clear-log"),
@@ -585,11 +596,13 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
             },
             "view": {
                 "description": "Temporarily decrypt and view file contents",
-                "usage": "view FILE_PATH|SHORTCUT",
+                "usage": "view FILE_PATH|SHORTCUT [--lines NUMBER]",
                 "details": [
                     "• Shows the decrypted contents of the file",
                     "• Does not modify the original encrypted file",
-                    "• Can use either the file path or the shortcut name"
+                    "• Can use either the file path or the shortcut name",
+                    "• Optional --lines flag to limit number of lines displayed",
+                    "• Example: view myfile --lines 10"
                 ]
             },
             "search": {
