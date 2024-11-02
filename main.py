@@ -337,107 +337,117 @@ def view(
     lines: Optional[int] = typer.Option(None, "--lines", "-n", help="Number of lines to display")
 ):
     """Temporarily decrypt and view a file's content using its path or shortcut."""
-    key = authenticate()
-    file_path = resolve_path(shortcut_or_path)
+    key = None
+    decrypted_data = None
+    content = None
+    content_lines = None
     
-    # Verify that file exists before viewing
-    if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: Specified file does not exist. Please provide a valid file path or shortcut.", fg=typer.colors.RED)
-        raise typer.Exit()
-
-    fernet = Fernet(key)
-
-    with open(file_path, "rb") as file:
-        encrypted_data = file.read()
-
     try:
-        decrypted_data = fernet.decrypt(encrypted_data)
-        content = decrypted_data.decode()
+        key = authenticate()
+        file_path = resolve_path(shortcut_or_path)
         
-        # If lines parameter is specified, limit the content
-        if lines is not None:
-            if lines <= 0:
-                typer.secho("Line count must be positive.", fg=typer.colors.RED)
-                raise typer.Exit()
-            content_lines = content.splitlines()[:lines]
-            content = '\n'.join(content_lines)
-        
-        # Try to detect the file type for syntax highlighting
-        file_extension = file_path.suffix.lower()
-        lexer_map = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.html': 'html',
-            '.css': 'css',
-            '.json': 'json',
-            '.xml': 'xml',
-            '.md': 'markdown',
-            '.txt': 'text',
-            '.sh': 'bash',
-            '.yml': 'yaml',
-            '.yaml': 'yaml',
-            '.sql': 'sql',
-            '.ini': 'ini',
-            '.conf': 'ini',
-            '.env': 'env',
-        }
-        
-        # Default to 'text' if extension not recognized
-        lexer = lexer_map.get(file_extension, 'text')
-        
-        # Create syntax highlighted content with line numbers
-        syntax = Syntax(
-            content,
-            lexer,
-            line_numbers=True,
-            word_wrap=True,
-            theme="monokai",  # You can change the theme here
-            padding=1
-        )
-        
-        # Create a panel with the file info and content
-        total_lines = len(decrypted_data.decode().splitlines())
-        panel_title = f"[bold blue]{file_path.name}[/bold blue]"
-        if lines:
-            panel_title += f" [italic](showing first {lines} of {total_lines} lines)[/italic]"
-        
-        panel = Panel(
-            syntax,
-            title=panel_title,
-            subtitle=f"[italic]{total_lines} lines total[/italic]",
-            border_style="blue"
-        )
-        
-        # Clear the screen for better presentation
-        console.clear()
-        
-        # Print file metadata
-        console.print(f"\n[bold yellow]File Information:[/bold yellow]")
-        console.print(f"[cyan]Location:[/cyan] {file_path}")
-        console.print(f"[cyan]Size:[/cyan] {file_path.stat().st_size:,} bytes")
-        console.print(f"[cyan]Type:[/cyan] {lexer.upper()}\n")
-        
-        # Print the content panel
-        console.print(panel)
-        
-        # Print help text at the bottom
-        console.print("\n[dim]Press Ctrl+C to exit[/dim]")
-        
-    except UnicodeDecodeError:
-        # Handle binary files
-        console.print("[yellow]Warning: This appears to be a binary file.[/yellow]")
-        console.print("\n[bold]Hex View:[/bold]")
-        
-        # Replace rich.hex import and Hex view with simple hex dump
-        hex_lines = [decrypted_data[i:i+16].hex(' ') for i in range(0, min(512, len(decrypted_data)), 16)]
-        console.print("\n".join(hex_lines))
-        
-        if len(decrypted_data) > 512:
-            console.print("\n[dim]... (showing first 512 bytes only)[/dim]")
+        if not file_path.exists() or not file_path.is_file():
+            typer.secho("Error: Specified file does not exist. Please provide a valid file path or shortcut.", fg=typer.colors.RED)
+            raise typer.Exit()
+
+        fernet = Fernet(key)
+
+        with open(file_path, "rb") as file:
+            encrypted_data = file.read()
+
+        try:
+            decrypted_data = fernet.decrypt(encrypted_data)
+            content = decrypted_data.decode()
+            
+            if lines is not None:
+                if lines <= 0:
+                    typer.secho("Line count must be positive.", fg=typer.colors.RED)
+                    raise typer.Exit()
+                content_lines = content.splitlines()[:lines]
+                content = '\n'.join(content_lines)
+            
+            file_extension = file_path.suffix.lower()
+            lexer_map = {
+                '.py': 'python',
+                '.js': 'javascript',
+                '.html': 'html',
+                '.css': 'css',
+                '.json': 'json',
+                '.xml': 'xml',
+                '.md': 'markdown',
+                '.txt': 'text',
+                '.sh': 'bash',
+                '.yml': 'yaml',
+                '.yaml': 'yaml',
+                '.sql': 'sql',
+                '.ini': 'ini',
+                '.conf': 'ini',
+                '.env': 'env',
+            }
+            
+            lexer = lexer_map.get(file_extension, 'text')
+            
+            syntax = Syntax(
+                content,
+                lexer,
+                line_numbers=True,
+                word_wrap=True,
+                theme="monokai",
+                padding=1
+            )
+            
+            total_lines = len(decrypted_data.decode().splitlines())
+            panel_title = f"[bold blue]{file_path.name}[/bold blue]"
+            if lines:
+                panel_title += f" [italic](showing first {lines} of {total_lines} lines)[/italic]"
+            
+            panel = Panel(
+                syntax,
+                title=panel_title,
+                subtitle=f"[italic]{total_lines} lines total[/italic]",
+                border_style="blue"
+            )
+            
+            console.clear()
+            
+            console.print(f"\n[bold yellow]File Information:[/bold yellow]")
+            console.print(f"[cyan]Location:[/cyan] {file_path}")
+            console.print(f"[cyan]Size:[/cyan] {file_path.stat().st_size:,} bytes")
+            console.print(f"[cyan]Type:[/cyan] {lexer.upper()}\n")
+            
+            console.print(panel)
+            console.print("\n[dim]Press Ctrl+C to exit[/dim]")
+
+        except UnicodeDecodeError:
+            # Handle binary files without exposing decrypted content
+            console.print("[yellow]Warning: This appears to be a binary file.[/yellow]")
+            console.print("\n[bold]Hex View:[/bold]")
+            
+            hex_lines = [decrypted_data[i:i+16].hex(' ') for i in range(0, min(512, len(decrypted_data)), 16)]
+            console.print("\n".join(hex_lines))
+            
+            if len(decrypted_data) > 512:
+                console.print("\n[dim]... (showing first 512 bytes only)[/dim]")
+
+        except InvalidToken:
+            typer.secho("Decryption failed. File may not be encrypted.", fg=typer.colors.RED)
+            raise typer.Exit()
             
     except Exception as e:
-        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+        # Generic error without exposing details
+        typer.secho("An error occurred while viewing the file.", fg=typer.colors.RED)
         raise typer.Exit()
+        
+    finally:
+        # Clear sensitive data from memory
+        if key:
+            key = None
+        if decrypted_data:
+            decrypted_data = b'\x00' * len(decrypted_data)
+        if content:
+            content = '\x00' * len(content)
+        if content_lines:
+            content_lines = None
 
 @app.command()
 def search(
