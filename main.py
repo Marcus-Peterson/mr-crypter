@@ -613,57 +613,96 @@ def clear_log():
 @app.command()
 def insert(shortcut_or_path: str, text: str, line: int = 1):
     """Insert text into a specific line of an encrypted file."""
-    key = authenticate()
-    file_path = resolve_path(shortcut_or_path)
+    key = None
+    decrypted_data = None
+    content = None
+    modified_content = None
     
-    # Verify that file exists
-    if not file_path.exists() or not file_path.is_file():
-        typer.secho("Error: Specified file does not exist. Please provide a valid file path or shortcut.", fg=typer.colors.RED)
-        raise typer.Exit()
-
-    fernet = Fernet(key)
-
-    # Read and decrypt the file
-    with open(file_path, "rb") as file:
-        encrypted_data = file.read()
-
     try:
-        decrypted_data = fernet.decrypt(encrypted_data)
-    except InvalidToken:
-        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-        raise typer.Exit()
-
-    try:
-        # Convert bytes to string and split into lines
-        content = decrypted_data.decode('utf-8').splitlines()
+        key = authenticate()
+        file_path = resolve_path(shortcut_or_path)
         
-        # Ensure line number is valid
-        if line < 1:
-            line = 1
-        if line > len(content) + 1:
-            line = len(content) + 1
+        # Verify that file exists
+        if not file_path.exists() or not file_path.is_file():
+            typer.secho("Error: Specified file does not exist.", fg=typer.colors.RED)
+            raise typer.Exit()
 
-        # Insert the text at the specified line (adjusting for 0-based index)
-        content.insert(line - 1, text)
-        
-        # Join the lines back together
-        modified_content = '\n'.join(content)
-        
-        # Encrypt the modified content
-        encrypted_data = fernet.encrypt(modified_content.encode('utf-8'))
-        
-        # Save the modified file
-        with open(file_path, "wb") as file:
-            file.write(encrypted_data)
+        # Validate input text
+        if not text or len(text.strip()) == 0:
+            typer.secho("Error: Empty text is not allowed.", fg=typer.colors.RED)
+            raise typer.Exit()
 
-        typer.secho(f"Text successfully inserted at line {line}.", fg=typer.colors.GREEN)
+        fernet = Fernet(key)
 
-    except UnicodeDecodeError:
-        typer.secho("The file appears to be binary or not a text file.", fg=typer.colors.RED)
-        raise typer.Exit()
+        # Read and decrypt the file
+        with open(file_path, "rb") as file:
+            encrypted_data = file.read()
+
+        try:
+            decrypted_data = fernet.decrypt(encrypted_data)
+        except InvalidToken:
+            typer.secho("Decryption failed. File may not be encrypted.", fg=typer.colors.RED)
+            raise typer.Exit()
+
+        try:
+            # Convert bytes to string and split into lines
+            content = decrypted_data.decode('utf-8').splitlines()
+            
+            # Ensure line number is valid
+            if line < 1:
+                typer.secho("Line number must be positive.", fg=typer.colors.RED)
+                raise typer.Exit()
+            if line > len(content) + 1:
+                typer.secho(f"Line number exceeds file length. Using last line ({len(content) + 1}).", fg=typer.colors.YELLOW)
+                line = len(content) + 1
+
+            # Insert the text at the specified line (adjusting for 0-based index)
+            content.insert(line - 1, text)
+            
+            # Join the lines back together
+            modified_content = '\n'.join(content)
+            
+            # Encrypt the modified content
+            encrypted_modified = fernet.encrypt(modified_content.encode('utf-8'))
+            
+            # Save the modified file atomically
+            temp_file = file_path.with_suffix('.tmp')
+            try:
+                # Write to temporary file first
+                with open(temp_file, "wb") as file:
+                    file.write(encrypted_modified)
+                
+                # Replace original file with temporary file
+                temp_file.replace(file_path)
+                
+            finally:
+                # Clean up temporary file if it still exists
+                if temp_file.exists():
+                    temp_file.unlink()
+
+            typer.secho(f"Text successfully inserted at line {line}.", fg=typer.colors.GREEN)
+
+        except UnicodeDecodeError:
+            typer.secho("The file appears to be binary or not a text file.", fg=typer.colors.RED)
+            raise typer.Exit()
+            
     except Exception as e:
-        typer.secho(f"Failed to insert text: {e}", fg=typer.colors.RED)
+        # Generic error without exposing details
+        typer.secho("An error occurred while modifying the file.", fg=typer.colors.RED)
         raise typer.Exit()
+        
+    finally:
+        # Clear sensitive data from memory
+        if key:
+            key = None
+        if decrypted_data:
+            decrypted_data = b'\x00' * len(decrypted_data)
+        if content:
+            for i in range(len(content)):
+                content[i] = '\x00' * len(content[i])
+            content = None
+        if modified_content:
+            modified_content = '\x00' * len(modified_content)
 
 @app.command()
 def help(command: Optional[str] = typer.Argument(None, help="Command to get help for")):
