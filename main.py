@@ -334,7 +334,10 @@ def decrypt(
 @app.command()
 def view(
     shortcut_or_path: str,
-    lines: Optional[int] = typer.Option(None, "--lines", "-n", help="Number of lines to display")
+    lines: Optional[int] = typer.Option(None, "--lines", "-n", help="Number of lines to display for text files"),
+    pages: Optional[int] = typer.Option(None, "--pages", "-p", help="Number of pages to display for PDFs"),
+    chars_per_page: Optional[int] = typer.Option(500, "--chars", "-c", help="Number of characters to show per PDF page"),
+    show_all: bool = typer.Option(False, "--all", "-a", help="Show all content (overrides --lines/--pages/--chars)")
 ):
     """Temporarily decrypt and view a file's content using its path or shortcut."""
     key = None
@@ -449,23 +452,43 @@ def view(
                         
                         console.print("\n[bold yellow]Content Preview:[/bold yellow]")
                         
-                        # Limit the number of pages to display
-                        pages_to_show = min(3, doc.page_count)
+                        # Determine number of pages to show
+                        if show_all:
+                            pages_to_show = doc.page_count
+                            chars_to_show = None  # Show all characters
+                        else:
+                            pages_to_show = min(pages or 3, doc.page_count)
+                            chars_to_show = chars_per_page
+                        
+                        # Show page navigation help if not showing all pages
+                        if not show_all and doc.page_count > pages_to_show:
+                            console.print("[dim]Use --pages N to show N pages, --all to show all content[/dim]\n")
+                        
                         for page_num in range(pages_to_show):
                             page = doc[page_num]
                             text = page.get_text()
                             
+                            # Handle text truncation
+                            if chars_to_show and len(text) > chars_to_show:
+                                display_text = text[:chars_to_show] + "..."
+                            else:
+                                display_text = text
+                            
                             # Create a panel for each page
                             panel = Panel(
-                                text[:500] + ("..." if len(text) > 500 else ""),
-                                title=f"[bold blue]Page {page_num + 1}[/bold blue]",
+                                display_text,
+                                title=f"[bold blue]Page {page_num + 1} of {doc.page_count}[/bold blue]",
                                 border_style="blue"
                             )
                             console.print(panel)
                             console.print()
                         
-                        if doc.page_count > pages_to_show:
-                            console.print(f"[dim]... {doc.page_count - pages_to_show} more pages not shown[/dim]")
+                        # Show summary if content was truncated
+                        if not show_all:
+                            if doc.page_count > pages_to_show:
+                                console.print(f"[dim]... {doc.page_count - pages_to_show} more pages not shown[/dim]")
+                            if chars_to_show:
+                                console.print("[dim]Use --chars N to show N characters per page, --all to show full content[/dim]")
                         
                     finally:
                         # Close the document
@@ -782,7 +805,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         commands = {
             "encrypt": ("Encrypt a file or directory", "encrypt PATH [--pattern PATTERN] [--recursive]"),
             "decrypt": ("Decrypt a file or directory", "decrypt PATH|SHORTCUT [--pattern PATTERN] [--recursive]"),
-            "view": ("Temporarily decrypt and view file contents", "view FILE_PATH|SHORTCUT [--lines NUMBER]"),
+            "view": ("View encrypted file contents", "view PATH|SHORTCUT [--lines N] [--pages N] [--chars N] [--all]"),
             "search": ("Search through encrypted files", "search QUERY [--shortcuts/--no-shortcuts] [--case-sensitive]"),
             "list-files": ("List all encrypted files", "list-files"),
             "clear-log": ("Clear the encrypted files log", "clear-log"),
@@ -829,14 +852,21 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
                 ]
             },
             "view": {
-                "description": "Temporarily decrypt and view file contents",
-                "usage": "view FILE_PATH|SHORTCUT [--lines NUMBER]",
+                "description": "View encrypted file contents with format-specific display options",
+                "usage": "view PATH|SHORTCUT [--lines N] [--pages N] [--chars N] [--all]",
                 "details": [
-                    "• Shows the decrypted contents of the file",
+                    "• Shows the decrypted contents with syntax highlighting for text files",
+                    "• Special handling for PDF files with metadata and content preview",
+                    "• Hex view for binary files",
+                    "• Text file options:",
+                    "  - --lines N: Show first N lines only",
+                    "• PDF options:",
+                    "  - --pages N: Show first N pages (default: 3)",
+                    "  - --chars N: Characters per page (default: 500)",
+                    "  - --all: Show entire content without truncation",
                     "• Does not modify the original encrypted file",
-                    "• Can use either the file path or the shortcut name",
-                    "• Optional --lines flag to limit number of lines displayed",
-                    "• Example: view myfile --lines 10"
+                    "• Can use either file path or shortcut name",
+                    "• Example: view document.pdf --pages 5 --chars 1000"
                 ]
             },
             "search": {
@@ -849,6 +879,29 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
                     "• --case-sensitive: Make search case-sensitive (default: no)"
                 ]
             },
+            "list-files": {
+                "description": "List all encrypted files",
+                "usage": "list-files",
+                "details": [
+                    "• Shows a table of all tracked files",
+                    "• Displays file name, location, shortcut, encryption date, size",
+                    "• Color-coded status indicators:",
+                    "  - Green: Currently encrypted",
+                    "  - Red: Currently decrypted",
+                    "  - Yellow: File not found",
+                    "• Automatically updates file status on display"
+                ]
+            },
+            "clear-log": {
+                "description": "Clear the encrypted files log",
+                "usage": "clear-log",
+                "details": [
+                    "• Removes all entries from the tracking file",
+                    "• Does not modify or delete the actual files",
+                    "• Requires confirmation before proceeding",
+                    "• Use with caution - this action cannot be undone"
+                ]
+            },
             "insert": {
                 "description": "Insert text into an encrypted file",
                 "usage": "insert FILE_PATH|SHORTCUT \"TEXT\" [LINE]",
@@ -856,7 +909,9 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
                     "• Temporarily decrypts the file",
                     "• Inserts the specified text at the given line number",
                     "• Line number is optional (defaults to line 1)",
-                    "• Re-encrypts the file after insertion"
+                    "• Re-encrypts the file after insertion",
+                    "• Works with text files only",
+                    "• Uses atomic operations for file safety"
                 ]
             }
         }
