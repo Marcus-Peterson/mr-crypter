@@ -419,15 +419,80 @@ def view(
             console.print("\n[dim]Press Ctrl+C to exit[/dim]")
 
         except UnicodeDecodeError:
-            # Handle binary files without exposing decrypted content
-            console.print("[yellow]Warning: This appears to be a binary file.[/yellow]")
-            console.print("\n[bold]Hex View:[/bold]")
-            
-            hex_lines = [decrypted_data[i:i+16].hex(' ') for i in range(0, min(512, len(decrypted_data)), 16)]
-            console.print("\n".join(hex_lines))
-            
-            if len(decrypted_data) > 512:
-                console.print("\n[dim]... (showing first 512 bytes only)[/dim]")
+            # Check if it's a PDF file
+            if file_path.suffix.lower() == '.pdf':
+                try:
+                    # Create a temporary file for the decrypted PDF
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+                        temp_pdf.write(decrypted_data)
+                        temp_path = temp_pdf.name
+
+                    try:
+                        # Open the PDF with PyMuPDF
+                        doc = fitz.open(temp_path)
+                        
+                        # Print PDF metadata
+                        console.print("\n[bold yellow]PDF Information:[/bold yellow]")
+                        console.print(f"[cyan]Location:[/cyan] {file_path}")
+                        console.print(f"[cyan]Pages:[/cyan] {doc.page_count}")
+                        console.print(f"[cyan]Size:[/cyan] {file_path.stat().st_size:,} bytes")
+                        
+                        # Print PDF metadata if available
+                        metadata = doc.metadata
+                        if metadata:
+                            if metadata.get('title'):
+                                console.print(f"[cyan]Title:[/cyan] {metadata['title']}")
+                            if metadata.get('author'):
+                                console.print(f"[cyan]Author:[/cyan] {metadata['author']}")
+                            if metadata.get('subject'):
+                                console.print(f"[cyan]Subject:[/cyan] {metadata['subject']}")
+                        
+                        console.print("\n[bold yellow]Content Preview:[/bold yellow]")
+                        
+                        # Limit the number of pages to display
+                        pages_to_show = min(3, doc.page_count)
+                        for page_num in range(pages_to_show):
+                            page = doc[page_num]
+                            text = page.get_text()
+                            
+                            # Create a panel for each page
+                            panel = Panel(
+                                text[:500] + ("..." if len(text) > 500 else ""),
+                                title=f"[bold blue]Page {page_num + 1}[/bold blue]",
+                                border_style="blue"
+                            )
+                            console.print(panel)
+                            console.print()
+                        
+                        if doc.page_count > pages_to_show:
+                            console.print(f"[dim]... {doc.page_count - pages_to_show} more pages not shown[/dim]")
+                        
+                    finally:
+                        # Close the document
+                        if 'doc' in locals():
+                            doc.close()
+                        
+                finally:
+                    # Securely delete the temporary file
+                    try:
+                        # First overwrite
+                        with open(temp_path, 'wb') as f:
+                            f.write(b'\x00' * len(decrypted_data))
+                        # Then delete
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass  # Ignore cleanup errors
+                
+            else:
+                # Handle other binary files with hex view
+                console.print("[yellow]Warning: This appears to be a binary file.[/yellow]")
+                console.print("\n[bold]Hex View:[/bold]")
+                
+                hex_lines = [decrypted_data[i:i+16].hex(' ') for i in range(0, min(512, len(decrypted_data)), 16)]
+                console.print("\n".join(hex_lines))
+                
+                if len(decrypted_data) > 512:
+                    console.print("\n[dim]... (showing first 512 bytes only)[/dim]")
 
         except InvalidToken:
             typer.secho("Decryption failed. File may not be encrypted.", fg=typer.colors.RED)
