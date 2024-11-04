@@ -3,4 +3,5 @@ cryptography==39.0.1
 rich==13.4.2
 PyMuPDF
 pandas==2.2.3
+filelock==3.16.1
 
