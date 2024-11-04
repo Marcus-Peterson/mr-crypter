@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/mnt/c/Users/Marcu/OneDrive/Desktop/mr-crypter/.venv/bin/python3
 import typer
 from typing import Optional
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -103,7 +103,7 @@ def derive_key(password: str) -> bytes:
 
 def authenticate() -> bytes:
     """Prompt for the password and return the derived key."""
-    password = getpass("Enter a password: ")
+    password = getpass("Enter your password: ")
     return derive_key(password)
 
 def create_verification_tag(key: bytes) -> bytes:
@@ -1126,8 +1126,8 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         console.print("\n[bold]Notes:[/bold]")
         console.print("• PATH can be the actual path to a file or directory")
         console.print("• SHORTCUT is the name you gave to the file during encryption")
-        console.print("• All commands will prompt for your password when needed")
-        console.print("\nFor detailed help on a specific command, use: [cyan]python main.py help COMMAND[/cyan]")
+        console.print("• Majority of commands will prompt for your password when needed")
+        console.print("\nFor detailed help on a specific command, use: [cyan]mr-crypter help COMMAND[/cyan]")
         
     else:
         # Show detailed help for specific command
@@ -1203,7 +1203,8 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
                     "• Removes all entries from the tracking file",
                     "• Does not modify or delete the actual files",
                     "• Requires confirmation before proceeding",
-                    "• Use with caution - this action cannot be undone"
+                    "• Use with caution - this action cannot be undone",
+                    "• ⚠️ WARNING ⚠️- using this command will cause issues when trying to interact with encrypted files"
                 ]
             },
             "insert": {
@@ -1223,7 +1224,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         if command not in detailed_help:
             typer.secho(f"No detailed help available for '{command}'", fg=typer.colors.RED)
             typer.secho("\nAvailable commands:", fg=typer.colors.YELLOW)
-            typer.secho("python main.py help", fg=typer.colors.GREEN)
+            typer.secho("mr-crypter help", fg=typer.colors.GREEN)
             return
 
         help_info = detailed_help[command]
