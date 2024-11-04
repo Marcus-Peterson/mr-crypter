@@ -46,22 +46,18 @@ if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 
-# Activate the virtual environment
+# Activate and install dependencies
 source "$VENV_DIR/bin/activate"
-
-# Install required Python packages in the virtual environment
 echo "Installing required Python packages..."
 pip install -r requirements.txt
 
-# Add shebang line if not present
-if ! grep -q "^#!/usr/bin/env python3" main.py; then
-    echo "Adding shebang line to main.py..."
-    sed -i '1i #!/usr/bin/env python3' main.py
-fi
-
-# Modify main.py to use the virtual environment's Python interpreter directly
+# Configure main script
 VENV_PYTHON_PATH="#!$(pwd)/$VENV_DIR/bin/python3"
-sed -i "1s|^.*$|$VENV_PYTHON_PATH|" main.py
+if ! grep -q "^#!" main.py; then
+    sed -i "1i $VENV_PYTHON_PATH" main.py
+else
+    sed -i "1c $VENV_PYTHON_PATH" main.py
+fi
 
 # Make the script executable
 echo "Making main.py executable..."
@@ -73,10 +69,38 @@ mv main.py mr-crypter
 
 # Move the script to /usr/local/bin
 echo "Moving mr-crypter to /usr/local/bin..."
-sudo mv mr-crypter /usr/local/bin/
+if ! sudo mv mr-crypter /usr/local/bin/; then
+    echo "Error: Could not move script to /usr/local/bin/"
+    echo "Please run with sudo or move manually"
+    exit 1
+fi
 
 # Deactivate the virtual environment
 deactivate
 
 echo "Installation complete. You can now use 'mr-crypter' from anywhere."
 echo "Virtual environment created at $(pwd)/$VENV_DIR"
+
+# Add update functionality
+if [ "$1" == "--update" ]; then
+    echo "Updating mr-crypter..."
+    if [ -d ".git" ]; then
+        # If it's a git repo, just pull
+        git pull
+    else
+        # Clone fresh
+        TEMP_DIR="../mr-crypter-temp"
+        git clone "https://github.com/Marcus-Peterson/mr-crypter.git" "$TEMP_DIR"
+        cp -r "$TEMP_DIR"/* .
+        rm -rf "$TEMP_DIR"
+    fi
+    
+    # Reinstall dependencies
+    source "$VENV_DIR/bin/activate"
+    pip install -r requirements.txt
+    deactivate
+    
+    echo "Update completed successfully!"
+    echo "Please restart your terminal for any changes to take effect."
+    exit 0
+fi
