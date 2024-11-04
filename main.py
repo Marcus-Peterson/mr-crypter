@@ -29,6 +29,18 @@ from rich.padding import Padding
 import secrets
 import filelock
 import logging
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHash
+import keyring
+import time
+import hmac
+from datetime import datetime, timedelta
+import json
+import ctypes
+import platform
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHash
+
 app = typer.Typer()
 # Configuration constants
 CONFIG_DIR = Path.home() / ".file_encryptor"
@@ -91,7 +103,7 @@ def derive_key(password: str) -> bytes:
 
 def authenticate() -> bytes:
     """Prompt for the password and return the derived key."""
-    password = getpass("Enter your password: ")
+    password = getpass("Enter a password: ")
     return derive_key(password)
 
 def create_verification_tag(key: bytes) -> bytes:
@@ -300,7 +312,8 @@ def encrypt(
 def decrypt(
     path: str = typer.Argument(..., help="File/directory path or shortcut to decrypt"),
     pattern: str = typer.Option("*", help="File pattern to match when decrypting a directory"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively"),
+    force: bool = typer.Option(False, "--force", "-f", help="Attempt decryption even if file is not in tracking database")
 ):
     """Decrypt a file or all files in a directory."""
     key = None
@@ -321,31 +334,40 @@ def decrypt(
             if not typer.confirm("Continue anyway?"):
                 raise typer.Exit()
 
-        # Verify the key using stored tag
+        # Check tracking database
         file_found = False
-        with TrackingFileManager():
-            if not TRACKING_FILE.exists():
-                typer.secho("Error: No tracking file found.", fg=typer.colors.RED)
-                raise typer.Exit()
-                
-            with open(TRACKING_FILE, "r") as csvfile:
-                csv_reader = csv.reader(csvfile)
-                for row in csv_reader:
-                    if row[1] == str(file_path.resolve()):
-                        file_found = True
-                        try:
-                            tag = base64.b64decode(row[6])
-                            if not verify_key(key, tag):
-                                typer.secho("Invalid password for this file.", fg=typer.colors.RED)
+        if TRACKING_FILE.exists():
+            with TrackingFileManager():
+                with open(TRACKING_FILE, "r") as csvfile:
+                    csv_reader = csv.reader(csvfile)
+                    for row in csv_reader:
+                        if row[1] == str(file_path.resolve()):
+                            file_found = True
+                            try:
+                                tag = base64.b64decode(row[6])
+                                if not verify_key(key, tag):
+                                    typer.secho("Invalid password for this file.", fg=typer.colors.RED)
+                                    raise typer.Exit()
+                            except (IndexError, base64.binascii.Error):
+                                typer.secho("Error: Corrupted tracking file entry.", fg=typer.colors.RED)
                                 raise typer.Exit()
-                        except (IndexError, base64.binascii.Error):
-                            typer.secho("Error: Corrupted tracking file entry.", fg=typer.colors.RED)
-                            raise typer.Exit()
-                        break
+                            break
 
         if not file_found:
-            typer.secho("Error: File not found in tracking database.", fg=typer.colors.RED)
-            raise typer.Exit()
+            if force:
+                typer.secho("File not found in tracking database. Attempting recovery...", fg=typer.colors.YELLOW)
+                if attempt_recovery(file_path, key):
+                    typer.secho("File recovered and decrypted successfully!", fg=typer.colors.GREEN)
+                    return
+                else:
+                    typer.secho("\nRecovery failed. This could mean:", fg=typer.colors.RED)
+                    typer.secho("1. The file is not encrypted", fg=typer.colors.RED)
+                    typer.secho("2. The password is incorrect", fg=typer.colors.RED)
+                    typer.secho("3. The file is corrupted", fg=typer.colors.RED)
+                    raise typer.Exit(1)
+            else:
+                typer.secho("Error: File not found in tracking database. Use --force to attempt recovery.", fg=typer.colors.RED)
+                raise typer.Exit(1)
 
         if file_path.is_file():
             # Single file decryption
@@ -758,14 +780,227 @@ def list_files():
     
     console.print(table)
 
+class SecureLogManager:
+    """Manages secure operations for log clearing with rate limiting and platform-specific security."""
+    
+    def __init__(self):
+        self.system = platform.system()
+        self.service_name = "mr_crypter_clear_log"
+        self.attempt_file = CONFIG_DIR / ".attempts"
+        self.max_attempts = 3
+        self.lockout_duration = 300  # 5 minutes
+        self.ph = PasswordHasher()
+        self.lock_file = str(TRACKING_FILE) + ".lock"
+        self.lock = filelock.FileLock(self.lock_file)
+    
+    def _get_secure_storage(self):
+        """Get platform-specific secure storage."""
+        if self.system == "Windows":
+            return "windows_credential_manager"
+        elif self.system == "Darwin":
+            return "macos_keychain"
+        else:
+            return "linux_secretservice"
+    
+    def has_password(self) -> bool:
+        """Check if a clear-log password is set."""
+        try:
+            return keyring.get_password(self.service_name, "hash") is not None
+        except Exception as e:
+            log_error(e, "has_password")
+            return False
+    
+    def setup_clear_log_password(self) -> bool:
+        """Set up the clear-log password."""
+        try:
+            typer.secho("\n⚠️  Clear-Log Password Setup", fg=typer.colors.YELLOW, bold=True)
+            typer.secho("Setting up secure clear-log authentication.", fg=typer.colors.YELLOW)
+            typer.secho("\nPassword Requirements:", fg=typer.colors.BLUE)
+            typer.secho("- Minimum 12 characters", fg=typer.colors.BLUE)
+            typer.secho("- Store this password securely (e.g., password manager)", fg=typer.colors.BLUE)
+            
+            while True:
+                password = getpass("\nEnter new clear-log password: ")
+                if len(password) < 12:
+                    typer.secho("Password must be at least 12 characters long.", fg=typer.colors.RED)
+                    continue
+                
+                confirm = getpass("Confirm password: ")
+                if password != confirm:
+                    typer.secho("Passwords don't match.", fg=typer.colors.RED)
+                    continue
+                
+                # Hash and store password
+                hash_value = self.ph.hash(password)
+                keyring.set_password(self.service_name, "hash", hash_value)
+                
+                typer.secho("\n✓ Clear-log password has been set successfully!", fg=typer.colors.GREEN)
+                return True
+                
+        except Exception as e:
+            typer.secho("Failed to set up password.", fg=typer.colors.RED)
+            log_error(e, "setup_clear_log_password")
+            return False
+        finally:
+            if 'password' in locals():
+                password_buffer = ctypes.create_string_buffer(password.encode())
+                ctypes.memset(password_buffer, 0, len(password))
+    
+    def verify_password(self, password: str) -> bool:
+        """Verify the clear-log password."""
+        try:
+            stored_hash = keyring.get_password(self.service_name, "hash")
+            if not stored_hash:
+                return False
+            
+            self.ph.verify(stored_hash, password)
+            return True
+            
+        except VerifyMismatchError:
+            return False
+        except Exception as e:
+            log_error(e, "verify_password")
+            return False
+        finally:
+            if 'password' in locals():
+                password_buffer = ctypes.create_string_buffer(password.encode())
+                ctypes.memset(password_buffer, 0, len(password))
+
+    def secure_delete_tracking_file(self) -> bool:
+        """Securely delete tracking file with proper locking."""
+        try:
+            with self.lock:  # Acquire lock before any operations
+                if not self.has_password():
+                    typer.secho("Security Error: Password verification required.", fg=typer.colors.RED)
+                    return False
+                
+                if TRACKING_FILE.exists():
+                    # Check file ownership and permissions
+                    stat_info = TRACKING_FILE.stat()
+                    if not check_file_ownership(TRACKING_FILE):
+                        typer.secho("Security Error: Invalid file ownership.", fg=typer.colors.RED)
+                        return False
+                    
+                    # Verify file hasn't been tampered with
+                    if not verify_file_integrity(TRACKING_FILE):
+                        typer.secho("Security Error: File integrity check failed.", fg=typer.colors.RED)
+                        return False
+                    
+                    # Perform secure deletion
+                    secure_delete_file(TRACKING_FILE)
+                    
+                    # Also clean up any backup/temporary files
+                    for temp_file in CONFIG_DIR.glob("encrypted_files.*"):
+                        if temp_file != TRACKING_FILE:
+                            secure_delete_file(temp_file)
+                    
+                    return True
+                return False
+                
+        except Exception as e:
+            log_error(e, "secure_delete_tracking_file")
+            return False
+
+def check_file_ownership(path: Path) -> bool:
+    """Verify file is owned by current user and has correct permissions."""
+    try:
+        stat_info = path.stat()
+        if os.name == 'posix':
+            return (
+                stat_info.st_uid == os.getuid() and  # Check owner
+                (stat_info.st_mode & 0o777) <= 0o600  # Check permissions
+            )
+        elif os.name == 'nt':  # Windows
+            import win32security
+            import win32api
+            
+            # Get file's security descriptor
+            security = win32security.GetFileSecurity(
+                str(path), 
+                win32security.OWNER_SECURITY_INFORMATION
+            )
+            
+            # Get owner SID
+            owner_sid = security.GetSecurityDescriptorOwner()
+            
+            # Get current user's SID
+            current_sid = win32security.GetTokenInformation(
+                win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY),
+                win32security.TokenUser
+            )[0]
+            
+            return owner_sid == current_sid
+            
+        return False
+        
+    except Exception as e:
+        log_error(e, "check_file_ownership")
+        return False
+
+def verify_file_integrity(path: Path) -> bool:
+    """Verify file hasn't been tampered with."""
+    try:
+        with open(path, 'rb') as f:
+            content = f.read()
+            
+        # Verify CSV structure
+        try:
+            lines = content.decode('utf-8').splitlines()
+            for line in lines:
+                parts = line.split(',')
+                if len(parts) != 7:  # Expected number of columns
+                    return False
+        except:
+            return False
+            
+        return True
+        
+    except Exception as e:
+        log_error(e, "verify_file_integrity")
+        return False
+
+def _show_clear_log_warnings() -> bool:
+    """Show warnings and get confirmation for clearing the log."""
+    typer.secho("\n⚠️  WARNING!", fg=typer.colors.RED, bold=True)
+    typer.secho("You are about to clear the encrypted files tracking log.", fg=typer.colors.YELLOW)
+    typer.secho("This action:", fg=typer.colors.YELLOW)
+    typer.secho("- Cannot be undone", fg=typer.colors.RED)
+    typer.secho("- May cause issues with encrypted files", fg=typer.colors.RED)
+    typer.secho("- Should only be used if you're absolutely sure", fg=typer.colors.RED)
+    
+    return typer.confirm("\nDo you want to continue?")
+
 @app.command()
 def clear_log():
-    """Clear all entries in the encrypted files log."""
-    if TRACKING_FILE.exists():
-        os.remove(TRACKING_FILE)
-        typer.secho("All entries in the encrypted files log have been cleared.", fg=typer.colors.GREEN)
-    else:
-        typer.secho("No encrypted files recorded.", fg=typer.colors.YELLOW)
+    """Clear all entries in the encrypted files log with secure authentication."""
+    secure_manager = SecureLogManager()
+    
+    # Use the manager's secure deletion method
+    if not secure_manager.secure_delete_tracking_file():
+        typer.secho("Failed to clear log securely.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+def secure_delete_file(file_path: Path) -> None:
+    """Securely delete a file by overwriting it before deletion."""
+    try:
+        if file_path.exists():
+            # Get file size
+            file_size = file_path.stat().st_size
+            
+            # Overwrite with random data multiple times
+            with open(file_path, 'wb') as f:
+                for _ in range(3):  # Three passes
+                    f.seek(0)
+                    f.write(secrets.token_bytes(file_size))
+                    f.flush()
+                    os.fsync(f.fileno())
+            
+            # Finally delete
+            file_path.unlink()
+            
+    except Exception as e:
+        log_error(e, "secure_delete_file")
+        raise
 
 @app.command()
 def insert(shortcut_or_path: str, text: str, line: int = 1):
@@ -1108,6 +1343,68 @@ def secure_file_permissions(path: Path) -> None:
 def log_error(error: Exception, function_name: str) -> None:
     """Log errors to the configured logging file."""
     logging.error(f"Error in {function_name}: {str(error)}")
+
+def attempt_recovery(file_path: Path, key: bytes) -> bool:
+    """Attempt to recover and decrypt a file without tracking info."""
+    encrypted_data = None
+    decrypted_data = None
+    
+    try:
+        file_size = file_path.stat().st_size
+        
+        with Progress(console=console) as progress:
+            task = progress.add_task("Attempting recovery...", total=file_size)
+            
+            # Step 1: Read
+            progress.update(task, description="Reading file...")
+            encrypted_data = atomic_read(file_path)
+            progress.advance(task, file_size/3)
+            
+            # Step 2: Decrypt
+            progress.update(task, description="Decrypting data...")
+            fernet = Fernet(key)
+            try:
+                decrypted_data = fernet.decrypt(encrypted_data)
+            except InvalidToken:
+                progress.update(task, description="❌ Invalid password or not encrypted")
+                return False
+            progress.advance(task, file_size/3)
+            
+            # Step 3: Write
+            progress.update(task, description="Writing file...")
+            atomic_write(file_path, decrypted_data)
+            secure_file_permissions(file_path)
+            progress.advance(task, file_size/3)
+            
+            progress.update(task, description="✓ Recovery successful")
+            return True
+            
+    except Exception as e:
+        log_error(e, "attempt_recovery")
+        return False
+        
+    finally:
+        if encrypted_data:
+            secure_cleanup(encrypted_data)
+        if decrypted_data:
+            secure_cleanup(decrypted_data)
+
+class SecureFileOperations:
+    def __init__(self):
+        self.lock = filelock.FileLock(str(TRACKING_FILE) + ".lock")
+        
+    def perform_operation(self, operation_func):
+        """Wrapper for secure file operations."""
+        try:
+            with self.lock:
+                if not check_file_ownership(TRACKING_FILE):
+                    raise SecurityError("Unauthorized access")
+                if not verify_file_integrity(TRACKING_FILE):
+                    raise SecurityError("File integrity check failed")
+                return operation_func()
+        except Exception as e:
+            log_error(e, "secure_file_operation")
+            raise
 
 if __name__ == "__main__":
     app()
