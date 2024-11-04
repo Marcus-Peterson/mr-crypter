@@ -41,7 +41,7 @@ After installation, you can use `mr-crypter` [COMMAND] from anywhere.
 ## Usage
 
 ### Initial Setup
-When using Mr Crypter for the first time, you will need to set a password. This password will be used for encryption and decryption, use the `change-password` command to set the password.
+Certain commands require a password to be set before they can be used like the `clear-log` command. Run `mr-crypter clear-log` to set it up, the first time you run it you will be asked to set a password.
 
 ### Getting Help
 Mr Crypter includes a comprehensive help system. You can access it in two ways:
