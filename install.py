@@ -67,12 +67,32 @@ def install_dependencies():
 # Add shebang line to main.py for virtual environment
 def configure_main_script():
     venv_python = venv_dir / "bin" / "python3" if os.name != "nt" else venv_dir / "Scripts" / "python.exe"
-    with main_script.open("r") as f:
-        lines = f.readlines()
-    if not lines[0].startswith("#!"):
-        with main_script.open("w") as f:
-            f.write(f"#!{venv_python}\n")
-            f.writelines(lines[1:])
+    try:
+        # Read with UTF-8 encoding
+        with main_script.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        # Write with UTF-8 encoding
+        with main_script.open("w", encoding="utf-8") as f:
+            if not lines[0].startswith("#!"):
+                f.write(f"#!{venv_python}\n")
+            f.writelines(lines)
+            
+        print(f"Successfully configured {main_script}")
+    except Exception as e:
+        print(f"Error configuring main script: {str(e)}")
+        # Fallback to read in binary mode if UTF-8 fails
+        try:
+            with main_script.open("rb") as f:
+                content = f.read()
+            with main_script.open("wb") as f:
+                if not content.startswith(b"#!"):
+                    f.write(f"#!{venv_python}\n".encode())
+                f.write(content)
+            print("Successfully configured main script using binary mode")
+        except Exception as e:
+            print(f"Fatal error configuring main script: {str(e)}")
+            raise
 
 def create_windows_batch():
     """Create a batch file to run mr-crypter"""
