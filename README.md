@@ -119,14 +119,6 @@ mr-crypter insert SHORTCUT "New content to add"
 ```
 
 ----------------------------------------------------------
-#### Change Password
-Change the current password after authenticating with the old password.
-
-```bash
-mr-crypter change-password
-```
-
-----------------------------------------------------------
 #### List Encrypted Files
 Display all files encrypted using Mr Crypter.
 
