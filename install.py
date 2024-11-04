@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 import winreg
 import ctypes
+from urllib.parse import urlparse
 
 # Define paths
 project_dir = Path(__file__).parent.resolve()
@@ -15,6 +16,8 @@ main_script = project_dir / "main.py"
 mr_crypter_script = project_dir / "mr-crypter"
 config_dir = Path.home() / ".file_encryptor"
 target_dir = Path("/usr/local/bin") if os.name != "nt" else Path(os.getenv("APPDATA")) / "mr-crypter"
+
+GITHUB_REPO = "https://github.com/Marcus-Peterson/mr-crypter.git"
 
 # Function to check Python and pip versions
 def check_python_and_pip():
@@ -134,8 +137,58 @@ def add_to_windows_path():
         print(f"Please add {target_dir} to your PATH manually.")
         return False
 
+def is_git_repo(path: Path) -> bool:
+    """Check if directory is a git repository."""
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=path,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def update_from_github():
+    """Update mr-crypter from GitHub."""
+    print("Updating mr-crypter...")
+    
+    try:
+        if is_git_repo(project_dir):
+            # If it's already a git repo, just pull
+            subprocess.run(["git", "pull"], cwd=project_dir, check=True)
+        else:
+            # Clone fresh
+            temp_dir = project_dir.parent / "mr-crypter-temp"
+            subprocess.run(["git", "clone", GITHUB_REPO, str(temp_dir)], check=True)
+            
+            # Copy files from temp to installation directory
+            shutil.copytree(temp_dir, project_dir, dirs_exist_ok=True)
+            shutil.rmtree(temp_dir)
+        
+        # Reinstall dependencies
+        install_dependencies()
+        
+        # Reconfigure and move script
+        configure_main_script()
+        rename_and_move_script()
+        
+        print("Update completed successfully!")
+        print("Please restart your terminal for any PATH changes to take effect.")
+        return True
+        
+    except Exception as e:
+        print(f"Error during update: {str(e)}")
+        return False
+
 # Main installation process
 def main():
+    # Check for update option
+    if "--update" in sys.argv:
+        update_from_github()
+        return
+        
     # Check for uninstall option
     if "--uninstall" in sys.argv:
         uninstall()
