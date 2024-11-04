@@ -6,9 +6,9 @@
 - **Description**: Allow users to press a key to auto-complete a shortcut based on stored shortcuts, speeding up workflows and minimizing typing errors.
 - **Implementation**: Utilize libraries like `prompt_toolkit` with `typer` to enable autocomplete for shortcuts.
 
-### Add better Support for PDF
-- **Description**: Add support for PDF files, allowing users to encrypt and decrypt PDF files, as well as view them.
-- **Implementation**: Use libraries like `PyMuPDF` to handle PDF files.
+~~### Add better Support for PDF~~
+~~- **Description**: Add better support for PDF files, currently users can encrypt and decrypt PDF files, but well can't view them properly.~~
+~~- **Implementation**: Use libraries like `PyMuPDF` to handle PDF files.~~
 
 ~~### Encryption Status and Metadata~~
 ~~- **Description**: Store additional metadata like the date of encryption, file size, and encryption status.~~
