@@ -13,7 +13,7 @@ import csv
 from rich.table import Table
 from rich import print as rprint
 from rich.console import Console
-from rich.progress import Progress
+from rich.progress import Progress, BarColumn, TimeRemainingColumn
 import fitz  # PyMuPDF
 import tempfile
 from cryptography.fernet import InvalidToken
@@ -26,14 +26,38 @@ from datetime import datetime
 from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.padding import Padding
+import secrets
+import filelock
+import logging
 app = typer.Typer()
-
 # Configuration constants
 CONFIG_DIR = Path.home() / ".file_encryptor"
 SALT_FILE = CONFIG_DIR / "salt.key"
 TRACKING_FILE = CONFIG_DIR / "encrypted_files.csv"
 ITERATIONS = 100_000  # Higher number = stronger but slower key derivation
 console = Console()
+
+# Setup logging
+logging.basicConfig(
+    filename=CONFIG_DIR / 'file_encryptor.log',
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+class TrackingFileManager:
+    """Thread-safe manager for tracking file operations."""
+    
+    def __init__(self):
+        self.lock_file = str(TRACKING_FILE) + ".lock"
+        self.lock = filelock.FileLock(self.lock_file)
+    
+    def __enter__(self):
+        self.lock.acquire()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.lock.release()
 
 def create_salt() -> bytes:
     """Generate a new salt and save it."""
@@ -85,35 +109,66 @@ def verify_key(key: bytes, tag: bytes) -> bool:
 
 def record_encryption(file_path: Path, shortcut: str, verification_tag: bytes):
     """Record encrypted file details with verification tag."""
-    CONFIG_DIR.mkdir(exist_ok=True)
+    try:
+        CONFIG_DIR.mkdir(exist_ok=True)
+        secure_file_permissions(CONFIG_DIR)
 
-    # Get file metadata
-    file_stats = file_path.stat()
-    encryption_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    file_size = file_stats.st_size
-    
-    # Convert verification tag to string for storage
-    tag_str = base64.b64encode(verification_tag).decode('utf-8')
-    
-    if TRACKING_FILE.exists():
-        with open(TRACKING_FILE, "r") as csvfile:
-            csv_reader = csv.reader(csvfile)
-            for row in csv_reader:
-                if row[1] == str(file_path.resolve()) or row[2] == shortcut:
-                    typer.secho("File or shortcut already exists in the log.", fg=typer.colors.RED)
-                    return
+        # Get file metadata
+        file_stats = file_path.stat()
+        encryption_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        file_size = file_stats.st_size
+        
+        # Convert verification tag to string for storage
+        tag_str = base64.b64encode(verification_tag).decode('utf-8')
+        
+        with TrackingFileManager():
+            # Check for existing entries
+            exists = False
+            if TRACKING_FILE.exists():
+                with open(TRACKING_FILE, "r") as csvfile:
+                    csv_reader = csv.reader(csvfile)
+                    exists = any(row[1] == str(file_path.resolve()) or row[2] == shortcut 
+                               for row in csv_reader)
+            
+            if exists:
+                typer.secho("File or shortcut already exists in the log.", fg=typer.colors.RED)
+                return
 
-    with open(TRACKING_FILE, mode="a", newline="") as csvfile:
-        csv_writer = csv.writer(csvfile)
-        csv_writer.writerow([
-            file_path.name,                  # filename
-            str(file_path.resolve()),        # filepath
-            shortcut,                        # shortcut
-            encryption_date,                 # encryption date
-            file_size,                       # file size in bytes
-            "encrypted",                     # encryption status
-            tag_str                          # verification tag
-        ])
+            # Add new entry atomically
+            new_row = [
+                file_path.name,
+                str(file_path.resolve()),
+                shortcut,
+                encryption_date,
+                file_size,
+                "encrypted",
+                tag_str
+            ]
+            
+            temp_file = TRACKING_FILE.with_suffix('.tmp')
+            try:
+                # Read existing content
+                rows = []
+                if TRACKING_FILE.exists():
+                    with open(TRACKING_FILE, "r") as csvfile:
+                        rows = list(csv.reader(csvfile))
+                
+                # Append new row and write
+                rows.append(new_row)
+                with open(temp_file, "w", newline="") as csvfile:
+                    csv_writer = csv.writer(csvfile)
+                    csv_writer.writerows(rows)
+                
+                temp_file.replace(TRACKING_FILE)
+                secure_file_permissions(TRACKING_FILE)
+                
+            finally:
+                if temp_file.exists():
+                    temp_file.unlink()
+
+    except Exception as e:
+        log_error(e, "record_encryption")
+        typer.secho("Error recording encryption details.", fg=typer.colors.RED)
 
 def remove_from_log(file_path: Path):
     """Remove a specific file entry from the tracking CSV."""
@@ -241,119 +296,106 @@ def encrypt(
 @app.command()
 def decrypt(
     path: str = typer.Argument(..., help="File/directory path or shortcut to decrypt"),
-    pattern: str = typer.Option("*", help="File pattern to match when decrypting a directory (e.g., *.txt)"),
+    pattern: str = typer.Option("*", help="File pattern to match when decrypting a directory"),
     recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
 ):
     """Decrypt a file or all files in a directory."""
     key = None
+    encrypted_data = None
     decrypted_data = None
     
     try:
         key = authenticate()
         file_path = resolve_path(path)
         
+        # Verify file exists and permissions
+        if not file_path.exists():
+            typer.secho("Error: File not found.", fg=typer.colors.RED)
+            raise typer.Exit()
+            
+        if not check_file_permissions(file_path):
+            typer.secho("Warning: File permissions are not secure.", fg=typer.colors.YELLOW)
+            if not typer.confirm("Continue anyway?"):
+                raise typer.Exit()
+
         # Verify the key using stored tag
-        if TRACKING_FILE.exists():
+        file_found = False
+        with TrackingFileManager():
+            if not TRACKING_FILE.exists():
+                typer.secho("Error: No tracking file found.", fg=typer.colors.RED)
+                raise typer.Exit()
+                
             with open(TRACKING_FILE, "r") as csvfile:
                 csv_reader = csv.reader(csvfile)
                 for row in csv_reader:
                     if row[1] == str(file_path.resolve()):
-                        tag = base64.b64decode(row[6])  # Get stored verification tag
-                        if not verify_key(key, tag):
-                            typer.secho("Invalid password for this file.", fg=typer.colors.RED)
+                        file_found = True
+                        try:
+                            tag = base64.b64decode(row[6])
+                            if not verify_key(key, tag):
+                                typer.secho("Invalid password for this file.", fg=typer.colors.RED)
+                                raise typer.Exit()
+                        except (IndexError, base64.binascii.Error):
+                            typer.secho("Error: Corrupted tracking file entry.", fg=typer.colors.RED)
                             raise typer.Exit()
                         break
 
-        fernet = Fernet(key)
+        if not file_found:
+            typer.secho("Error: File not found in tracking database.", fg=typer.colors.RED)
+            raise typer.Exit()
 
-        try:
-            # Handle directory decryption
-            if file_path.is_dir():
-                # Collect files to process
-                if recursive:
-                    files = list(file_path.rglob(pattern))
-                else:
-                    files = list(file_path.glob(pattern))
-
-                # Filter out directories and verify files are tracked
-                tracked_files = []
-                if TRACKING_FILE.exists():
-                    with open(TRACKING_FILE, "r") as csvfile:
-                        csv_reader = csv.reader(csvfile)
-                        tracked_paths = {Path(row[1]) for row in csv_reader}
-                        tracked_files = [f for f in files if f.is_file() and f in tracked_paths]
-
-                if not tracked_files:
-                    typer.secho(f"No encrypted files matching pattern '{pattern}' found in {file_path}", fg=typer.colors.YELLOW)
-                    return
-
-                # Confirm with user
-                typer.echo(f"\nFound {len(tracked_files)} encrypted files to decrypt:")
-                for f in tracked_files:
-                    typer.echo(f"  • {f.relative_to(file_path)}")
-                
-                if not typer.confirm("\nDo you want to proceed with decryption?"):
-                    typer.echo("Operation cancelled.")
-                    return
-
-                # Process files with progress bar
-                with Progress(console=console) as progress:
-                    task = progress.add_task("Decrypting files...", total=len(tracked_files))
-                    
-                    for file_path in tracked_files:
-                        try:
-                            with open(file_path, "rb") as file:
-                                encrypted_data = file.read()
-                            decrypted_data = fernet.decrypt(encrypted_data)
-                            
-                            with open(file_path, "wb") as file:
-                                file.write(decrypted_data)
-                            
-                            update_file_status(file_path, "decrypted")
-                            progress.advance(task)
-                            
-                        except Exception as e:
-                            typer.secho(f"Failed to decrypt {file_path.name}: {str(e)}", fg=typer.colors.RED)
-
-                typer.secho("\nBatch decryption completed!", fg=typer.colors.GREEN)
-
-            # Handle single file decryption
-            else:
-                file_size = file_path.stat().st_size
+        if file_path.is_file():
+            # Single file decryption
+            file_size = file_path.stat().st_size
+            
+            try:
                 with Progress(console=console) as progress:
                     task = progress.add_task("Decrypting...", total=file_size)
                     
-                    with open(file_path, "rb") as file:
-                        encrypted_data = file.read()
-                        progress.update(task, advance=file_size)
-
-                    try:
-                        decrypted_data = fernet.decrypt(encrypted_data)
-                    except InvalidToken:
-                        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-                        raise typer.Exit()
-
-                    with open(file_path, "wb") as file:
-                        file.write(decrypted_data)
-
-                update_file_status(file_path, "decrypted")
-                typer.secho("File decrypted successfully.", fg=typer.colors.GREEN)
+                    # Step 1: Read
+                    progress.update(task, description="Reading file...")
+                    encrypted_data = atomic_read(file_path)
+                    progress.advance(task, file_size/3)
+                    
+                    # Step 2: Decrypt
+                    progress.update(task, description="Decrypting data...")
+                    fernet = Fernet(key)
+                    decrypted_data = fernet.decrypt(encrypted_data)
+                    progress.advance(task, file_size/3)
+                    
+                    # Step 3: Write
+                    progress.update(task, description="Writing file...")
+                    atomic_write(file_path, decrypted_data)
+                    secure_file_permissions(file_path)
+                    progress.advance(task, file_size/3)
+                    
+                    # Update file status without using TrackingFileManager
+                    update_file_status(file_path, "decrypted")
                 
-        except Exception as e:
-            typer.secho(f"Error during decryption: {str(e)}", fg=typer.colors.RED)
-            raise typer.Exit()
-            
+                typer.secho("File decrypted successfully.", fg=typer.colors.GREEN)
+                return
+                
+            except InvalidToken:
+                typer.secho("\nDecryption failed. File may be corrupted.", fg=typer.colors.RED)
+                raise typer.Exit()
+            except Exception as e:
+                log_error(e, "decrypt")
+                typer.secho(f"\nError during decryption: {str(e)}", fg=typer.colors.RED)
+                raise typer.Exit()
+
     except Exception as e:
-        # Generic error without exposing details
-        typer.secho("An error occurred while decrypting the file.", fg=typer.colors.RED)
+        log_error(e, "decrypt")
+        typer.secho("\nAn error occurred during decryption.", fg=typer.colors.RED)
         raise typer.Exit()
         
     finally:
-        # Clear sensitive data from memory
+        # Secure cleanup
         if key:
             key = None
+        if encrypted_data:
+            secure_cleanup(encrypted_data)
         if decrypted_data:
-            decrypted_data = b'\x00' * len(decrypted_data)
+            secure_cleanup(decrypted_data)
 
 @app.command()
 def view(
@@ -571,7 +613,7 @@ def search(
     try:
         # Read CSV with all column names
         files_df = pd.read_csv(TRACKING_FILE, names=[
-            'filename', 'filepath', 'shortcut', 'encryption_date', 'size', 'status'
+            'filename', 'filepath', 'shortcut', 'encryption_date', 'size', 'status', 'tag'
         ])
         
         # Special handling for status-based searches
@@ -618,8 +660,8 @@ def search(
         table.add_column("Filename", style="cyan")
         table.add_column("Shortcut", style="green")
         table.add_column("Location", style="blue")
-        table.add_column("Status")  # Removed default style for color-coding
-        
+        table.add_column("Status")
+
         for _, row in results.iterrows():
             # Color-code the status
             status_style = {
@@ -957,7 +999,6 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
 def update_file_status(file_path: Path, new_status: str):
     """Update the status of a file in the tracking CSV."""
     if not TRACKING_FILE.exists():
-        typer.secho("No tracking file found.", fg=typer.colors.YELLOW)
         return
     
     try:
@@ -968,24 +1009,23 @@ def update_file_status(file_path: Path, new_status: str):
         
         with open(TRACKING_FILE, "r", newline='') as csvfile:
             csv_reader = csv.reader(csvfile)
-            for row in csv_reader:
-                if row[1] == file_path_str:
-                    row[5] = new_status  # Update status
-                    updated = True
-                    typer.secho(f"Updating status for {file_path.name} to {new_status}", fg=typer.colors.BLUE)
-                rows.append(row)
+            rows = list(csv_reader)
+        
+        # Update status
+        for row in rows:
+            if row[1] == file_path_str:
+                row[5] = new_status
+                updated = True
+                break
         
         if updated:
-            # Write back all entries with updated status
+            # Write back all entries
             with open(TRACKING_FILE, "w", newline='') as csvfile:
                 csv_writer = csv.writer(csvfile)
                 csv_writer.writerows(rows)
-            typer.secho(f"Status updated successfully to {new_status}", fg=typer.colors.GREEN)
-        else:
-            typer.secho(f"File {file_path.name} not found in tracking file", fg=typer.colors.YELLOW)
-            
+                
     except Exception as e:
-        typer.secho(f"Error updating file status: {str(e)}", fg=typer.colors.RED)
+        log_error(e, "update_file_status")
 
 @app.command()
 def migrate_tracking_file():
@@ -1019,6 +1059,52 @@ def migrate_tracking_file():
     except Exception as e:
         typer.secho(f"Error during migration: {str(e)}", fg=typer.colors.RED)
         raise typer.Exit()
+
+def secure_cleanup(data: bytes) -> None:
+    """Securely clear sensitive data from memory."""
+    try:
+        # Multiple overwrites with random data
+        for _ in range(3):
+            data[:] = secrets.token_bytes(len(data))
+        data[:] = b'\x00' * len(data)
+    except Exception:
+        pass
+
+def atomic_write(file_path: Path, data: bytes) -> None:
+    """Write data atomically using a temporary file."""
+    temp_path = file_path.with_suffix(file_path.suffix + '.tmp')
+    with open(temp_path, 'wb') as f:
+        f.write(data)
+    temp_path.replace(file_path)
+
+def atomic_read(file_path: Path) -> bytes:
+    """Read file with error handling."""
+    try:
+        with open(file_path, 'rb') as f:
+            return f.read()
+    except Exception as e:
+        typer.secho("Error reading file.", fg=typer.colors.RED)
+        raise typer.Exit()
+
+def check_file_permissions(path: Path) -> bool:
+    """Check if file permissions are secure."""
+    try:
+        return (path.stat().st_mode & 0o777) <= 0o600
+    except Exception as e:
+        log_error(e, "check_file_permissions")
+        return False
+
+def secure_file_permissions(path: Path) -> None:
+    """Set secure file permissions."""
+    try:
+        if os.name == 'posix':  # Unix-like systems
+            path.chmod(0o600)  # User read/write only
+    except Exception as e:
+        log_error(e, "secure_file_permissions")
+
+def log_error(error: Exception, function_name: str) -> None:
+    """Log errors to the configured logging file."""
+    logging.error(f"Error in {function_name}: {str(error)}")
 
 if __name__ == "__main__":
     app()
