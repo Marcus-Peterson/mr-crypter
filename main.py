@@ -37,6 +37,9 @@ TRACKING_FILE = CONFIG_DIR / "encrypted_files.csv"
 ITERATIONS = 100_000  # Higher number = stronger but slower key derivation
 console = Console()
 
+# Create config directory if it doesn't exist
+CONFIG_DIR.mkdir(exist_ok=True)
+
 # Setup logging
 logging.basicConfig(
     filename=CONFIG_DIR / 'file_encryptor.log',
