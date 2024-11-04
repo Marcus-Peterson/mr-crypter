@@ -30,10 +30,9 @@ app = typer.Typer()
 
 # Configuration constants
 CONFIG_DIR = Path.home() / ".file_encryptor"
-CONFIG_FILE = CONFIG_DIR / "config.hash"
 SALT_FILE = CONFIG_DIR / "salt.key"
 TRACKING_FILE = CONFIG_DIR / "encrypted_files.csv"
-ITERATIONS = 100_000  # Number of iterations for hashing
+ITERATIONS = 100_000  # Higher number = stronger but slower key derivation
 console = Console()
 
 def create_salt() -> bytes:
@@ -51,8 +50,8 @@ def load_salt() -> bytes:
             return f.read()
     return create_salt()
 
-def hash_password(password: str) -> bytes:
-    """Hash the password using PBKDF2 and a salt."""
+def derive_key(password: str) -> bytes:
+    """Derive an encryption key from the password and salt."""
     salt = load_salt()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -60,34 +59,32 @@ def hash_password(password: str) -> bytes:
         salt=salt,
         iterations=ITERATIONS
     )
-    return kdf.derive(password.encode())
-
-def store_password_hash(password_hash: bytes):
-    """Store the password hash."""
-    with open(CONFIG_FILE, "wb") as f:
-        f.write(password_hash)
+    key = kdf.derive(password.encode())
+    return base64.urlsafe_b64encode(key)
 
 def authenticate() -> bytes:
-    """Prompt for the password and authenticate the user."""
+    """Prompt for the password and return the derived key."""
     password = getpass("Enter your password: ")
-    password_hash = hash_password(password)
+    return derive_key(password)
 
-    # Check the stored hash
-    if not CONFIG_FILE.exists():
-        store_password_hash(password_hash)  # Save hash for first-time setup
-        typer.echo("New password set and securely stored.")
-    else:
-        with open(CONFIG_FILE, "rb") as f:
-            stored_hash = f.read()
-        if stored_hash != password_hash:
-            typer.secho("Authentication failed. Incorrect password.", fg=typer.colors.RED)
-            raise typer.Exit()
+def create_verification_tag(key: bytes) -> bytes:
+    """Create a verification tag from the key."""
+    # Create a known piece of data that we'll encrypt as our verification
+    verification_data = b"VALID_ENCRYPTION_TAG"
+    fernet = Fernet(key)
+    return fernet.encrypt(verification_data)
 
-    # Use derived key for encryption and decryption
-    return base64.urlsafe_b64encode(password_hash)
+def verify_key(key: bytes, tag: bytes) -> bool:
+    """Verify if the key can decrypt the verification tag."""
+    try:
+        fernet = Fernet(key)
+        decrypted = fernet.decrypt(tag)
+        return decrypted == b"VALID_ENCRYPTION_TAG"
+    except InvalidToken:
+        return False
 
-def record_encryption(file_path: Path, shortcut: str):
-    """Record encrypted file details to the tracking CSV if not already recorded, with a shortcut."""
+def record_encryption(file_path: Path, shortcut: str, verification_tag: bytes):
+    """Record encrypted file details with verification tag."""
     CONFIG_DIR.mkdir(exist_ok=True)
 
     # Get file metadata
@@ -95,7 +92,9 @@ def record_encryption(file_path: Path, shortcut: str):
     encryption_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_size = file_stats.st_size
     
-    # Check if the file or shortcut is already recorded
+    # Convert verification tag to string for storage
+    tag_str = base64.b64encode(verification_tag).decode('utf-8')
+    
     if TRACKING_FILE.exists():
         with open(TRACKING_FILE, "r") as csvfile:
             csv_reader = csv.reader(csvfile)
@@ -104,7 +103,6 @@ def record_encryption(file_path: Path, shortcut: str):
                     typer.secho("File or shortcut already exists in the log.", fg=typer.colors.RED)
                     return
 
-    # Record file details with metadata
     with open(TRACKING_FILE, mode="a", newline="") as csvfile:
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow([
@@ -113,7 +111,8 @@ def record_encryption(file_path: Path, shortcut: str):
             shortcut,                        # shortcut
             encryption_date,                 # encryption date
             file_size,                       # file size in bytes
-            "encrypted"                      # encryption status
+            "encrypted",                     # encryption status
+            tag_str                          # verification tag
         ])
 
 def remove_from_log(file_path: Path):
@@ -159,6 +158,7 @@ def encrypt(
     try:
         key = authenticate()
         fernet = Fernet(key)
+        verification_tag = create_verification_tag(key)
 
         # Handle directory encryption
         if path.is_dir():
@@ -203,7 +203,7 @@ def encrypt(
                             file.write(encrypted_data)
                         
                         # Record encryption
-                        record_encryption(file_path, shortcut)
+                        record_encryption(file_path, shortcut, verification_tag)
                         update_file_status(file_path, "encrypted")
                         
                         progress.advance(task)
@@ -230,7 +230,7 @@ def encrypt(
                 with open(path, "wb") as file:
                     file.write(encrypted_data)
 
-            record_encryption(path, shortcut)
+            record_encryption(path, shortcut, verification_tag)
             update_file_status(path, "encrypted")
             typer.secho(f"File encrypted and recorded with shortcut '{shortcut}'.", fg=typer.colors.GREEN)
             
@@ -245,91 +245,115 @@ def decrypt(
     recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
 ):
     """Decrypt a file or all files in a directory."""
-    key = authenticate()
-    file_path = resolve_path(path)
+    key = None
+    decrypted_data = None
     
-    if not file_path.exists():
-        typer.secho("Error: Path does not exist.", fg=typer.colors.RED)
-        raise typer.Exit()
-    
-    fernet = Fernet(key)
-
     try:
-        # Handle directory decryption
-        if file_path.is_dir():
-            # Collect files to process
-            if recursive:
-                files = list(file_path.rglob(pattern))
+        key = authenticate()
+        file_path = resolve_path(path)
+        
+        # Verify the key using stored tag
+        if TRACKING_FILE.exists():
+            with open(TRACKING_FILE, "r") as csvfile:
+                csv_reader = csv.reader(csvfile)
+                for row in csv_reader:
+                    if row[1] == str(file_path.resolve()):
+                        tag = base64.b64decode(row[6])  # Get stored verification tag
+                        if not verify_key(key, tag):
+                            typer.secho("Invalid password for this file.", fg=typer.colors.RED)
+                            raise typer.Exit()
+                        break
+
+        fernet = Fernet(key)
+
+        try:
+            # Handle directory decryption
+            if file_path.is_dir():
+                # Collect files to process
+                if recursive:
+                    files = list(file_path.rglob(pattern))
+                else:
+                    files = list(file_path.glob(pattern))
+
+                # Filter out directories and verify files are tracked
+                tracked_files = []
+                if TRACKING_FILE.exists():
+                    with open(TRACKING_FILE, "r") as csvfile:
+                        csv_reader = csv.reader(csvfile)
+                        tracked_paths = {Path(row[1]) for row in csv_reader}
+                        tracked_files = [f for f in files if f.is_file() and f in tracked_paths]
+
+                if not tracked_files:
+                    typer.secho(f"No encrypted files matching pattern '{pattern}' found in {file_path}", fg=typer.colors.YELLOW)
+                    return
+
+                # Confirm with user
+                typer.echo(f"\nFound {len(tracked_files)} encrypted files to decrypt:")
+                for f in tracked_files:
+                    typer.echo(f"  • {f.relative_to(file_path)}")
+                
+                if not typer.confirm("\nDo you want to proceed with decryption?"):
+                    typer.echo("Operation cancelled.")
+                    return
+
+                # Process files with progress bar
+                with Progress(console=console) as progress:
+                    task = progress.add_task("Decrypting files...", total=len(tracked_files))
+                    
+                    for file_path in tracked_files:
+                        try:
+                            with open(file_path, "rb") as file:
+                                encrypted_data = file.read()
+                            decrypted_data = fernet.decrypt(encrypted_data)
+                            
+                            with open(file_path, "wb") as file:
+                                file.write(decrypted_data)
+                            
+                            update_file_status(file_path, "decrypted")
+                            progress.advance(task)
+                            
+                        except Exception as e:
+                            typer.secho(f"Failed to decrypt {file_path.name}: {str(e)}", fg=typer.colors.RED)
+
+                typer.secho("\nBatch decryption completed!", fg=typer.colors.GREEN)
+
+            # Handle single file decryption
             else:
-                files = list(file_path.glob(pattern))
+                file_size = file_path.stat().st_size
+                with Progress(console=console) as progress:
+                    task = progress.add_task("Decrypting...", total=file_size)
+                    
+                    with open(file_path, "rb") as file:
+                        encrypted_data = file.read()
+                        progress.update(task, advance=file_size)
 
-            # Filter out directories and verify files are tracked
-            tracked_files = []
-            if TRACKING_FILE.exists():
-                with open(TRACKING_FILE, "r") as csvfile:
-                    csv_reader = csv.reader(csvfile)
-                    tracked_paths = {Path(row[1]) for row in csv_reader}
-                    tracked_files = [f for f in files if f.is_file() and f in tracked_paths]
-
-            if not tracked_files:
-                typer.secho(f"No encrypted files matching pattern '{pattern}' found in {file_path}", fg=typer.colors.YELLOW)
-                return
-
-            # Confirm with user
-            typer.echo(f"\nFound {len(tracked_files)} encrypted files to decrypt:")
-            for f in tracked_files:
-                typer.echo(f"  • {f.relative_to(file_path)}")
-            
-            if not typer.confirm("\nDo you want to proceed with decryption?"):
-                typer.echo("Operation cancelled.")
-                return
-
-            # Process files with progress bar
-            with Progress(console=console) as progress:
-                task = progress.add_task("Decrypting files...", total=len(tracked_files))
-                
-                for file_path in tracked_files:
                     try:
-                        with open(file_path, "rb") as file:
-                            encrypted_data = file.read()
                         decrypted_data = fernet.decrypt(encrypted_data)
-                        
-                        with open(file_path, "wb") as file:
-                            file.write(decrypted_data)
-                        
-                        update_file_status(file_path, "decrypted")
-                        progress.advance(task)
-                        
-                    except Exception as e:
-                        typer.secho(f"Failed to decrypt {file_path.name}: {str(e)}", fg=typer.colors.RED)
+                    except InvalidToken:
+                        typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
+                        raise typer.Exit()
 
-            typer.secho("\nBatch decryption completed!", fg=typer.colors.GREEN)
+                    with open(file_path, "wb") as file:
+                        file.write(decrypted_data)
 
-        # Handle single file decryption
-        else:
-            file_size = file_path.stat().st_size
-            with Progress(console=console) as progress:
-                task = progress.add_task("Decrypting...", total=file_size)
+                update_file_status(file_path, "decrypted")
+                typer.secho("File decrypted successfully.", fg=typer.colors.GREEN)
                 
-                with open(file_path, "rb") as file:
-                    encrypted_data = file.read()
-                    progress.update(task, advance=file_size)
-
-                try:
-                    decrypted_data = fernet.decrypt(encrypted_data)
-                except InvalidToken:
-                    typer.secho("Decryption failed. File may not be encrypted or is corrupted.", fg=typer.colors.RED)
-                    raise typer.Exit()
-
-                with open(file_path, "wb") as file:
-                    file.write(decrypted_data)
-
-            update_file_status(file_path, "decrypted")
-            typer.secho("File decrypted successfully.", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"Error during decryption: {str(e)}", fg=typer.colors.RED)
+            raise typer.Exit()
             
     except Exception as e:
-        typer.secho(f"Error during decryption: {str(e)}", fg=typer.colors.RED)
+        # Generic error without exposing details
+        typer.secho("An error occurred while decrypting the file.", fg=typer.colors.RED)
         raise typer.Exit()
+        
+    finally:
+        # Clear sensitive data from memory
+        if key:
+            key = None
+        if decrypted_data:
+            decrypted_data = b'\x00' * len(decrypted_data)
 
 @app.command()
 def view(
@@ -962,6 +986,39 @@ def update_file_status(file_path: Path, new_status: str):
             
     except Exception as e:
         typer.secho(f"Error updating file status: {str(e)}", fg=typer.colors.RED)
+
+@app.command()
+def migrate_tracking_file():
+    """Migrate existing tracking file to include verification tags."""
+    if not TRACKING_FILE.exists():
+        typer.secho("No tracking file to migrate.", fg=typer.colors.YELLOW)
+        return
+
+    try:
+        # Get password for creating new verification tags
+        key = authenticate()
+        verification_tag = create_verification_tag(key)
+        tag_str = base64.b64encode(verification_tag).decode('utf-8')
+
+        # Read existing entries
+        with open(TRACKING_FILE, "r") as csvfile:
+            rows = list(csv.reader(csvfile))
+
+        # Add verification tag to each row
+        for row in rows:
+            if len(row) < 7:  # Only add tag if it doesn't exist
+                row.append(tag_str)
+
+        # Write back updated entries
+        with open(TRACKING_FILE, "w", newline="") as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerows(rows)
+
+        typer.secho("Successfully migrated tracking file.", fg=typer.colors.GREEN)
+
+    except Exception as e:
+        typer.secho(f"Error during migration: {str(e)}", fg=typer.colors.RED)
+        raise typer.Exit()
 
 if __name__ == "__main__":
     app()
