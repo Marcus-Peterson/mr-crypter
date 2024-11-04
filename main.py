@@ -1230,7 +1230,7 @@ def help(command: Optional[str] = typer.Argument(None, help="Command to get help
         help_info = detailed_help[command]
         console.print(f"\n[bold cyan]{command}[/bold cyan]")
         console.print(f"\n[bold]Description:[/bold] {help_info['description']}")
-        console.print(f"\n[bold]Usage:[/bold] python main.py {help_info['usage']}")
+        console.print(f"\n[bold]Usage:[/bold] mr-crypter {help_info['usage']}")
         console.print("\n[bold]Details:[/bold]")
         for detail in help_info['details']:
             console.print(detail)
