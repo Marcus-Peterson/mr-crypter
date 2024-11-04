@@ -48,15 +48,15 @@ Mr Crypter includes a comprehensive help system. You can access it in two ways:
 
 ```bash
 # Show all available commands and general help
-python main.py help
+mr-crypter help
 
 # Get detailed help for a specific command
-python main.py help COMMAND
+mr-crypter help COMMAND
 ```
 
 For example:
 ```bash
-python main.py help encrypt
+mr-crypter help encrypt
 ```
 
 ### Commands
@@ -67,18 +67,18 @@ Below are the commands available with Mr Crypter:
 Encrypt a specified file and log its details.
 
 ```bash
-python main.py encrypt FILE_PATH
+mr-crypter encrypt FILE_PATH
 ```
 ----------------------------------------------------------
 #### Decrypt a File
 Decrypt a previously encrypted file.
 
 ```bash
-python main.py decrypt FILE_PATH
+mr-crypter decrypt FILE_PATH
 ```
 #### or
 ```bash
-python main.py decrypt SHORTCUT
+mr-crypter decrypt SHORTCUT
 ```
 
 ----------------------------------------------------------
@@ -86,11 +86,11 @@ python main.py decrypt SHORTCUT
 Read and display the content of an encrypted file without modifying it.
 
 ```bash
-python main.py view FILE_PATH [--lines NUMBER]
+mr-crypter view FILE_PATH [--lines NUMBER]
 ```
 #### or
 ```bash
-python main.py view SHORTCUT [--lines NUMBER]
+mr-crypter view SHORTCUT [--lines NUMBER]
 ```
 
 Options:
@@ -99,23 +99,23 @@ Options:
 Examples:
 ```bash
 # View entire file
-python main.py view document.txt
+mr-crypter view document.txt
 
 # View first 10 lines only
-python main.py view document.txt --lines 10
+mr-crypter view document.txt --lines 10
 
 # View first 5 lines using shortcut
-python main.py view doc_shortcut -n 5
+mr-crypter view doc_shortcut -n 5
 ```
 
 ----------------------------------------------------------
 #### Temporarily Opens Encrypted File & Inserts Text
 ```bash
-python main.py insert FILE_PATH "New content to add"
+mr-crypter insert FILE_PATH "New content to add"
 ```
 #### or
 ```bash
-python main.py insert SHORTCUT "New content to add"
+mr-crypter insert SHORTCUT "New content to add"
 ```
 
 ----------------------------------------------------------
@@ -123,7 +123,7 @@ python main.py insert SHORTCUT "New content to add"
 Change the current password after authenticating with the old password.
 
 ```bash
-python main.py change-password
+mr-crypter change-password
 ```
 
 ----------------------------------------------------------
@@ -131,14 +131,14 @@ python main.py change-password
 Display all files encrypted using Mr Crypter.
 
 ```bash
-python main.py list-files
+mr-crypter list-files
 ```
 
 ----------------------------------------------------------
 #### Clears The Log Of Encrypted Files & Shortcut
 
 ```bash
-python main.py clear-log
+mr-crypter clear-log
 ```
 
 ----------------------------------------------------------
@@ -146,7 +146,7 @@ python main.py clear-log
 Search through encrypted files by filename or shortcut.
 
 ```bash
-python main.py search SEARCH_TERM
+mr-crypter search SEARCH_TERM
 ```
 
 Options:
@@ -156,13 +156,13 @@ Options:
 Examples:
 ```bash
 # Basic search
-python main.py search document
+mr-crypter search document
 
 # Case-sensitive search
-python main.py search PDF --case-sensitive
+mr-crypter search PDF --case-sensitive
 
 # Search only in filenames (exclude shortcuts)
-python main.py search report --no-shortcuts
+mr-crypter search report --no-shortcuts
 ```
 
 ## Configuration Files
@@ -170,34 +170,35 @@ python main.py search report --no-shortcuts
 Mr Crypter uses the following configuration files and directories to manage encryption:
 
 - **Configuration Directory**: `~/.file_encryptor/`
-- **Salt File**: `salt.key` - Stores the salt used for hashing.
-- **Config Hash**: `config.hash` - Stores the password hash.
-- **Encrypted Files Log**: `encrypted_files.csv` - Logs all encrypted files.
+- **Salt File**: `salt.key` - Stores the salt used for key derivation
+- **Encrypted Files Log**: `encrypted_files.csv` - Logs all encrypted files
+- **Log File**: `file_encryptor.log` - Stores error logs
 
 
 ## Security Notes
-- Your password is hashed and stored securely; however, remember that if you forget the password, encrypted files cannot be decrypted.
-- The salt and password hash are stored locally in the configuration directory.
-- Use a strong password to enhance security.
+- Your password is never stored; only a salt for key derivation is kept
+- Each file has its own verification tag for integrity checking
+- Keys are derived on-demand and immediately cleared from memory
+- Use a strong password to enhance security
 
 ## Example
 
 Encrypt a file:
 
 ```bash
-python main.py encrypt ~/Documents/sample.txt
+mr-crypter encrypt ~/Documents/sample.txt
 ```
 
 Decrypt the same file:
 
 ```bash
-python main.py decrypt ~/Documents/sample.txt
+mr-crypter decrypt ~/Documents/sample.txt
 ```
 
 Get help on encryption:
 
 ```bash
-python main.py help encrypt
+mr-crypter help encrypt
 ```
 
 ## License
