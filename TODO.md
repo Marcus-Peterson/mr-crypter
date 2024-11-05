@@ -20,7 +20,7 @@
 ### Encrypt while in a folder
 - **Description**: When a user has installed Mr Crypter they can use it globally, this opens up new avenues of encryption
 Lets say a user is located insade a specific folder, they should be able to encrypt that entire folder/dir without having to specify folder/dir path 
-- **Implementation**: mr-crypter encrypt --entire-dir. using a `entire-dir` flag we could achieve something like this.
+- **Implementation**: `mr-crypter encrypt --entire-dir`. using a `entire-dir` flag we could achieve something like this.
 
 ### Configurable Encryption Settings
 - **Description**: Allow users to specify encryption strength (e.g., AES-128, AES-256) and customize chunk size for file reading during encryption.
