@@ -6,8 +6,7 @@ With Mr Crypter, users can securely encrypt and decrypt files using a password-b
 ## Features
 - **File Encryption**: Encrypt files with a password for added security.
 - **File Decryption**: Decrypt encrypted files with the same password.
-- **Read Encrypted Files**: Temporarily decrypt and view file content without altering the original file.
-- **Change Password**: Update the encryption password securely.
+- **Read Encrypted Files**: Temporarily decrypt and view file content without altering the original 
 - **List Encrypted Files**: Display a list of all files encrypted by Mr Crypter.
 - **Search Encrypted Files**: Search through encrypted files by filename or shortcut.
 - **Built-in Help**: Comprehensive help system with detailed command information.
