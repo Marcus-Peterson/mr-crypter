@@ -41,7 +41,10 @@ import platform
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHash
 
+from safestring import PasswordManager, Entry
+from password_command import password_app
 app = typer.Typer()
+app.add_typer(password_app, name="password")
 # Configuration constants
 CONFIG_DIR = Path.home() / ".file_encryptor"
 SALT_FILE = CONFIG_DIR / "salt.key"
