@@ -26,6 +26,12 @@ Lets say a user is located insade a specific folder, they should be able to encr
 - **Description**: Allow users to specify encryption strength (e.g., AES-128, AES-256) and customize chunk size for file reading during encryption.
 - **Implementation**: Provide a `settings` command to easily adjust these configurations.
 
+
+### Remove a specific entry from the log file
+- **Description**: Main issue with the clear log file is that it removes all entries, there needs to be a command to remove a very specific entry in csv
+- **Implementation**: Provide a ``remove-entry` command
+
+
 ### Backup and Restore Encrypted File List
 - **Description**: Enable users to back up the `encrypted_files.csv` log and restore it later, helpful in case of accidental deletion or for migration to a new machine.
 
