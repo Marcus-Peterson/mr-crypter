@@ -1,4 +1,3 @@
-#!/mnt/c/Users/Marcu/OneDrive/Desktop/mr-crypter/.venv/bin/python3
 import typer
 from typing import Optional
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -42,9 +41,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHash
 
 from safestring import PasswordManager, Entry
-from password_command import password_app
+from typing_extensions import Annotated
 app = typer.Typer()
-app.add_typer(password_app, name="password")
 # Configuration constants
 CONFIG_DIR = Path.home() / ".file_encryptor"
 SALT_FILE = CONFIG_DIR / "salt.key"
@@ -217,11 +215,33 @@ def resolve_path(shortcut_or_path: str) -> Path:
     
     return Path(shortcut_or_path)
 
+
+
+"""
+TODO: Add this to --> insert, search, decrypt, view
+TODO: This needs to be added as well -->
+    name: Annotated[
+        str, typer.Option(help="", autocompletion=complete_shortcut_name)
+    ] = "World",
+
+"""
+
+
+def complete_shortcut_name(incomplete:str):
+    shortcuts = []
+    with open(TRACKING_FILE,mode="r",encoding="utf-8") as csv_file:
+        csv_reader = csv.reader(csv_file)
+        for row in csv_reader:
+            shortcuts.append(row[2])
+    valid_shortcuts = [i for i in shortcuts if i.startswith(incomplete)]
+    return valid_shortcuts()
+
 @app.command()
 def encrypt(
+    name:Annotated[str, typer.Option(help="", autocompletion=complete_shortcut_name)] = "autocomplete",
     path: Path = typer.Argument(..., help="File or directory to encrypt"),
     pattern: str = typer.Option("*", help="File pattern to match when encrypting a directory (e.g., *.txt)"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively")
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Process subdirectories recursively"),    
 ):
     """Encrypt a file or all files in a directory."""
     if not path.exists():
@@ -630,6 +650,12 @@ def view(
             content = '\x00' * len(content)
         if content_lines:
             content_lines = None
+
+"""
+name: Annotated[
+        str,typer.Option(help="",autocompletion=complete_file_name)
+    ] = "shortcuts"
+"""
 
 @app.command()
 def search(
@@ -1098,6 +1124,13 @@ def insert(shortcut_or_path: str, text: str, line: int = 1):
             content = None
         if modified_content:
             modified_content = '\x00' * len(modified_content)
+
+@app.command()
+def settings(choose_encryption:str):
+    encrypttion_choices = ["AES-128", "AES-256","SHA256"]
+
+
+
 
 @app.command()
 def help(command: Optional[str] = typer.Argument(None, help="Command to get help for")):
